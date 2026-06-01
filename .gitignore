@@ -1,0 +1,32 @@
+node_modules/
+.dev-pids
+dist/
+.next/
+.turbo/
+.cache/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# local media (dev driver)
+uploads/
+
+# prisma local sqlite (if used)
+*.db
+*.db-journal
+
+# generated
+**/generated/

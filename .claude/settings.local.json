@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:developers.facebook.com)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm db:generate)",
+      "Bash(grep -n 'post:${\\\\|engage:${\\\\|\"post:.*:\"\\\\|\"engage:.*:\"\\\\|\\\\.startsWith.\\\\`post:\\\\|\\\\.startsWith.\\\\`engage:\\\\|getJob.\\\\`post:\\\\|getJob.\\\\`engage:' apps/api/src/services/posts.ts apps/api/src/services/engagement.ts apps/api/src/routes/engagement.ts apps/api/src/routes/posts.ts)"
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "smm",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Instagram + Threads management system",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1",
+    "stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop.ps1",
+    "dev:api": "pnpm --filter @smm/api dev",
+    "dev:worker": "pnpm --filter @smm/api worker",
+    "dev:web": "pnpm --filter @smm/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @smm/db generate",
+    "db:migrate": "pnpm --filter @smm/db migrate",
+    "db:studio": "pnpm --filter @smm/db studio",
+    "secrets:push": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-secrets.ps1",
+    "deploy": "fly deploy"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsx": "^4.19.2",
+    "@types/node": "^20.17.10"
+  }
+}

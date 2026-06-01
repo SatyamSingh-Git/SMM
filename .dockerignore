@@ -1,0 +1,40 @@
+node_modules
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/.cache
+
+# secrets / env (Fly injects via secrets)
+.env
+.env.*
+!.env.example
+
+# dev tooling
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.dev-pids
+
+# local media (volumes handle this in prod)
+uploads/
+apps/api/uploads/
+**/uploads/
+
+# web app is deployed separately (or stays local)
+apps/web
+
+# infra docs / scripts not needed in the image
+infra
+scripts
+README.md
+*.md
+.claude

@@ -1,0 +1,52 @@
+# Fly.io deploy config for the SMM API + worker.
+# One machine, one process, one persistent volume for media uploads.
+# After `fly launch` generates this, edit `app =` to match what Fly assigns.
+
+app = "smm-personal"
+primary_region = "bom"   # Mumbai — close to your Supabase + Upstash regions
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Persistent volume for /data/uploads. Created with:
+#   fly volumes create smm_media --region bom --size 1
+[[mounts]]
+  source = "smm_media"
+  destination = "/data"
+
+# HTTP service for the API. The publish + engagement runners run in the same
+# process so no extra service is needed — they poll Postgres directly (no Redis).
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"     # worker must stay alive to fire scheduled jobs
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 25
+    hard_limit = 50
+
+  # Health check — calls our /health endpoint.
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "get"
+    path = "/health"
+
+# Free tier: shared-cpu-1x @ 256MB. Fits because we esbuild-bundle the API +
+# workspace deps into a single file (Dockerfile step "pnpm bundle") which
+# strips tsx + workspace-resolution overhead from runtime memory.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+# Apply schema migrations before swapping the running version on each deploy.
+# TEMPORARILY DISABLED 2026-05-28: no pending migration in this change set, and
+# bom had no capacity for the ephemeral release_command VM. Safe to skip.
+# RESTORE (uncomment) after this deploy / before any deploy that adds a migration.
+# [deploy]
+#   release_command = "pnpm --filter @smm/db migrate:deploy"

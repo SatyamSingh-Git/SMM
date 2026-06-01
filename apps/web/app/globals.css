@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+/* Design tokens — light by default, dark via .dark on <html>. */
+:root {
+  --bg: #f6f6f9;
+  --surface: #ffffff;
+  --surface-2: #fafafd;
+  --border: #ececf2;
+  --border-soft: #f1f1f6;
+  --fg: #0a0a0b;
+  --fg-muted: #6c6c78;
+  --fg-subtle: #9a9aa6;
+  --accent: #dc1a5c;
+  --accent-fg: #ffffff;
+  --accent-soft: #fde6ee;
+  --ring: #dc1a5c;
+  --threads: #0a0a0b;
+  --instagram: #dc1a5c;
+  --success: #10b981;
+  --danger: #e11d48;
+  --warning: #d97706;
+}
+
+.dark {
+  --bg: #08080a;
+  --surface: #111114;
+  --surface-2: #161619;
+  --border: #1f1f24;
+  --border-soft: #18181c;
+  --fg: #fafafa;
+  --fg-muted: #a1a1aa;
+  --fg-subtle: #6b6b73;
+  --accent: #ff3a82;
+  --accent-fg: #ffffff;
+  --accent-soft: #2a131e;
+  --ring: #ff3a82;
+  --threads: #fafafa;
+  --instagram: #ff3a82;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-threads: var(--threads);
+  --color-instagram: var(--instagram);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+/* FullCalendar overrides for our design system. */
+.fc {
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: var(--surface);
+  --fc-neutral-bg-color: var(--surface-2);
+  --fc-today-bg-color: color-mix(in oklab, var(--accent) 6%, transparent);
+  --fc-event-bg-color: var(--surface-2);
+  --fc-event-border-color: var(--border);
+  --fc-event-text-color: var(--fg);
+  font-family: var(--font-geist-sans);
+}
+.fc .fc-toolbar-title { font-size: 1rem; font-weight: 600; color: var(--fg); }
+.fc .fc-col-header-cell-cushion { color: var(--fg-muted); font-weight: 500; font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; padding: 10px 8px; }
+.fc .fc-daygrid-day-number { color: var(--fg-muted); font-size: .82rem; padding: 8px 10px; }
+.fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number { color: var(--accent); font-weight: 600; }
+.fc .fc-daygrid-day-frame { padding: 4px; }
+.fc .fc-event { border-radius: 8px; padding: 4px 8px; font-size: .75rem; cursor: pointer; transition: transform .08s ease, box-shadow .08s ease; }
+.fc .fc-event:hover { transform: translateY(-1px); box-shadow: 0 4px 10px -4px color-mix(in oklab, var(--fg) 22%, transparent); }
+.fc .fc-scrollgrid { border-radius: 14px; overflow: hidden; }
+.fc .fc-h-event, .fc .fc-daygrid-event { background: transparent; border: none; }
+
+/* Per-status event styling. The class names come from CalendarView events[].classNames. */
+.fc .smm-event-queued    { background: color-mix(in oklab, var(--accent) 8%, transparent); border: 1px solid color-mix(in oklab, var(--accent) 22%, transparent); }
+.fc .smm-event-publishing{ background: color-mix(in oklab, var(--accent) 12%, transparent); border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent); }
+.fc .smm-event-published { background: color-mix(in oklab, var(--success) 8%, transparent); border: 1px solid color-mix(in oklab, var(--success) 22%, transparent); opacity: .85; }
+.fc .smm-event-failed    { background: color-mix(in oklab, var(--danger) 10%, transparent);  border: 1px solid color-mix(in oklab, var(--danger) 30%, transparent); }
+.fc .smm-event-cancelled { background: var(--surface-2); border: 1px dashed var(--border); opacity: .55; text-decoration: line-through; }
+.fc .smm-event-draft     { background: var(--surface-2); border: 1px dashed var(--border); }
+
+/* Subtle scrollbars */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--fg-subtle); }
+*::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,289 @@
+// SMM database schema.
+// Stage 1: accounts, media assets, posts, publish_jobs.
+// Stages 2 & 3 models will be added when those stages start.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Platform {
+  instagram
+  threads
+}
+
+enum PostType {
+  // Instagram
+  ig_feed
+  ig_carousel
+  ig_reel
+  ig_story
+  // Threads
+  threads_post
+  threads_reply_chain
+}
+
+enum PostStatus {
+  draft
+  queued
+  publishing
+  published
+  failed
+  cancelled
+}
+
+enum MediaType {
+  image
+  video
+}
+
+model Account {
+  id                   String   @id @default(cuid())
+  platform             Platform
+  // Platform-specific user id (IG Business Account ID, or Threads user id)
+  platformUserId       String
+  username             String?
+  // Encrypted access token (AES-256-GCM). See packages/api crypto util.
+  accessTokenEncrypted String
+  // For IG long-lived tokens, expiry ~60 days; we refresh ≥7 days early.
+  tokenExpiresAt       DateTime?
+  // For IG only: the linked Facebook Page id (required for publishing).
+  fbPageId             String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  posts                Post[]
+  mediaAssets          MediaAsset[]
+  snapshots            AccountSnapshot[]
+
+  @@unique([platform, platformUserId])
+}
+
+model MediaAsset {
+  id          String    @id @default(cuid())
+  accountId   String
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  type        MediaType
+  // Storage key (local path or S3 key) and the public HTTPS URL Meta will fetch.
+  storageKey  String
+  publicUrl   String
+  mimeType    String
+  sizeBytes   Int
+  widthPx     Int?
+  heightPx    Int?
+  durationMs  Int?
+  createdAt   DateTime  @default(now())
+
+  postAssets  PostAsset[]
+}
+
+// Per-post IG extras (location, collaborators, reel cover, etc).
+// Stored as a JSON column on Post — keeps the SQL schema small while we iterate
+// on which knobs we actually expose in the UI.
+//
+// Shape (TypeScript-side):
+//   {
+//     locationId?: string;          // Facebook Page ID for a tagged location
+//     locationName?: string;        // human-readable, just for display
+//     collaborators?: string[];     // IG usernames invited as co-authors
+//     thumbOffset?: number;         // Reel cover frame, ms into the video
+//     coverUrl?: string;            // optional custom Reel cover (public HTTPS JPEG)
+//     isAiGenerated?: boolean;      // we set Post.aiGenerated AND remind user to toggle "AI Info" in IG app
+//   }
+
+model Post {
+  id              String     @id @default(cuid())
+  accountId       String
+  account         Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  platform        Platform
+  type            PostType
+  caption         String?
+  // Scheduled publish time (UTC). Null = draft.
+  scheduledAt     DateTime?
+  status          PostStatus @default(draft)
+  // Whatever the platform returns after publish.
+  platformPostId  String?
+  platformUrl     String?
+  // True if any *media* in this post was AI-generated (Meta self-label flag).
+  aiGenerated     Boolean    @default(false)
+  // For Threads reply chains: ordered list of [{caption, asset_ids?}] persisted on the parent post.
+  // Simpler than a self-referencing model for v1; revisit if we need querying.
+  replyChainJson  Json?
+  // IG-only extras (location, collaborators, reel cover, etc). See comment above MediaAsset model.
+  igExtrasJson    Json?
+  // Last error message if status=failed.
+  lastError       String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  assets          PostAsset[]
+  publishJobs     PublishJob[]
+  insights        PostInsight[]
+
+  @@index([accountId, status, scheduledAt])
+}
+
+// Many-to-many join: a post can have multiple assets (carousel), with order.
+// Per-asset extras (alt text, in-image user tags) live here because each carousel child
+// gets its own values.
+model PostAsset {
+  postId  String
+  post    Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  assetId String
+  asset   MediaAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  // Position in carousel (0-indexed). For non-carousel, always 0.
+  position Int       @default(0)
+  // Accessibility text for screen readers (IG `alt_text` param).
+  altText  String?
+  // IG in-image user tags: [{ username: string, x: number, y: number }] with x/y in [0,1].
+  userTagsJson Json?
+
+  @@id([postId, assetId])
+  @@index([postId, position])
+}
+
+// ---------- Stage 2: engagement / auto-reply ----------
+
+enum EngagementStatus {
+  new          // just ingested, not decided yet
+  queued       // marked for the reply worker
+  replying     // worker has picked it up
+  replied      // we sent a reply
+  skipped      // we won't reply (already replied somewhere in chain, etc.)
+  failed       // something went wrong
+}
+
+// A comment we've seen on one of our posts. The agent replies AT MOST once
+// per conversation tree — once replied, the entire downstream branch is left
+// to the human.
+model EngagementComment {
+  id                   String           @id @default(cuid())
+  platform             Platform
+  // Always have this — it's the comment id Meta returns.
+  platformCommentId    String           @unique
+  // Our Post.id if we have it locally. Null if the post predates our system.
+  postId               String?
+  // The Threads post id this comment is on (top-level container).
+  platformPostId       String
+  // Direct parent — the comment this is a reply to (or null for top-level).
+  parentPlatformId     String?
+  // For convenience when prompting / displaying — we also store post text.
+  postCaption          String?
+  authorUsername       String?
+  authorPlatformId     String?
+  text                 String
+  receivedAt           DateTime         @default(now())
+  status               EngagementStatus @default(new)
+  agentReplyText       String?
+  agentPlatformReplyId String?
+  lastError            String?
+  // When the reply should fire (Postgres-based scheduling, replaces BullMQ).
+  // Null = fire immediately when the poller next picks it up.
+  fireAt               DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  @@index([status, fireAt])
+  @@index([status, receivedAt])
+  @@index([platformPostId])
+  @@index([authorPlatformId])
+}
+
+// One (question, my_answer) pair learned from the user's actual past replies.
+// Used as few-shot examples for the reply generator so the agent mimics
+// the user's natural voice.
+model StyleExample {
+  id           String   @id @default(cuid())
+  platform     Platform
+  // What the commenter said.
+  questionText String
+  // What the user replied. This is the "answer" we want to imitate.
+  answerText   String
+  // Optional original post text — helps the model anchor context.
+  postContext  String?
+  // Platform id of the user's reply, so we can dedupe re-imports.
+  platformReplyId String? @unique
+  createdAt    DateTime @default(now())
+
+  @@index([platform, createdAt])
+}
+
+// ---------- Stage 1.5: insights / dashboard ----------
+
+// One snapshot of a published post's performance metrics. We capture multiple
+// times in the first week (1h, 6h, 24h, 3d, 7d) to see velocity. After 7d
+// the numbers stabilize and we stop snapshotting that post.
+model PostInsight {
+  id              String   @id @default(cuid())
+  postId          String
+  post            Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  capturedAt      DateTime @default(now())
+  // Common metrics — nulls mean "platform doesn't expose this for this post type."
+  // Instagram exposes: reach, impressions, likes, comments, saves, shares, profile_visits, follows
+  // Threads exposes:   views, likes, comments (=replies), reposts, quotes, shares
+  reach           Int?
+  impressions     Int?
+  views           Int?
+  likes           Int?
+  comments        Int?
+  saves           Int?
+  shares          Int?
+  reposts         Int?     // Threads
+  quotes          Int?     // Threads
+  profileVisits   Int?     // IG
+  follows         Int?     // IG attributable follows from this post
+  // Full Meta response in case we want extra fields later without a migration.
+  rawJson         Json?
+
+  @@index([postId, capturedAt])
+}
+
+// Cache for AI-generated dashboard insights. We only call DeepSeek when the
+// user explicitly clicks "Refresh" on a section — the cached row is what the
+// dashboard reads otherwise. Single row per `kind`; replaced on regen.
+model DashboardAiCache {
+  id            String   @id @default(cuid())
+  kind          String   @unique // "weeklyFocus" | "commentThemes" | "captionPatterns" | "engagementMixSummary" | "weeklyActions"
+  payload       Json
+  // Token usage from the call that generated this row — surfaces "this cost ~$X" hints.
+  inputTokens   Int?
+  outputTokens  Int?
+  generatedAt   DateTime @default(now())
+}
+
+// Daily account-level snapshot — follower count + bio metrics. Used for the
+// growth chart and the "follower delta" KPI.
+model AccountSnapshot {
+  id          String   @id @default(cuid())
+  accountId   String
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  capturedAt  DateTime @default(now())
+  followers   Int
+  following   Int?
+  postsCount  Int?
+
+  @@index([accountId, capturedAt])
+}
+
+// Backs the BullMQ publish queue. One job per attempt; on retry we insert a new row.
+model PublishJob {
+  id          String   @id @default(cuid())
+  postId      String
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  attempt     Int      @default(1)
+  // BullMQ job id (so we can correlate logs back).
+  bullJobId   String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  succeeded   Boolean  @default(false)
+  errorMessage String?
+  createdAt   DateTime @default(now())
+
+  @@unique([postId, attempt])
+  @@index([postId])
+}
