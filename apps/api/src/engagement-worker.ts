@@ -10,7 +10,13 @@ import { publishItem } from "./publishers/threads.js";
 import { generateThreadsReply } from "./services/reply-generator.js";
 import { pollForNewComments } from "./services/engagement.js";
 import { learnThreadsStyle } from "./services/style-learning.js";
-import { isOverDailyCap, avoidQuietWindows } from "./services/reply-schedule.js";
+import { backfillFromPlatforms } from "./services/backfill.js";
+import { regenerateAllAiCaches } from "./services/dashboard-ai-regen.js";
+import {
+  isOverDailyCap,
+  avoidQuietWindows,
+  formatDynamicSleepWindowsToday,
+} from "./services/reply-schedule.js";
 
 // Reply runner cadence. We deliberately go slower than Meta's published 1000
 // replies/24h cap — what matters for anti-spam is the BURST rate, not the
@@ -21,8 +27,19 @@ const REPLY_POLL_MS = 90_000;
 // Max replies fired per tick. Hard 1 to keep the cadence "1 reply every
 // ~90s" instead of "5 replies in 10s then 80s idle."
 const REPLY_BATCH_SIZE = 1;
-const COMMENT_POLL_MS = 5 * 60_000; // poll Threads for new comments every 5min
+// 8 minutes (was 5) — combined with LOOKBACK_DAYS=7 in services/engagement.ts,
+// the comment poller's steady-state Threads-API budget drops from ~1,200/hr
+// to ~300/hr, well under the 1,500/hr read cap (services/rate-limiter.ts).
+const COMMENT_POLL_MS = 8 * 60_000;
 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+// Periodic backfill of new posts from Meta so the dashboard sees content the
+// user published directly via the Threads/Instagram apps (not through SMM's
+// composer). 6 hours × a NARROW 2-day window keeps the per-cycle Meta cost
+// small (1 listMyPosts + up to 8 paginated listMyMedia pages) while still
+// catching new posts well before the user looks at the dashboard. The wider
+// 14-day (or 60-day forced) window is reserved for the manual Sync button.
+const AUTO_BACKFILL_MS = 6 * 60 * 60 * 1000;
+const AUTO_BACKFILL_DAYS = 2;
 
 let replyProcessing = false;
 
@@ -129,13 +146,16 @@ async function processOneReply(commentId: string): Promise<void> {
       const MAX_MECH_RETRIES = 3;
 
       if (isMechanical && prevAttempts < MAX_MECH_RETRIES) {
-        // Backoff: 15min, 30min, 60min.
+        // Backoff: 15min, 30min, 60min. Push past quiet windows so the
+        // dashboard's "fires in N min" estimate matches reality and we don't
+        // rely solely on the runner's wall-clock pause check.
         const backoffMin = 15 * Math.pow(2, prevAttempts);
+        const fireAtMs = avoidQuietWindows(Date.now() + backoffMin * 60_000);
         await prisma.engagementComment.update({
           where: { id: commentId },
           data: {
             status: "queued",
-            fireAt: new Date(Date.now() + backoffMin * 60_000),
+            fireAt: new Date(fireAtMs),
             lastError: `[attempts=${prevAttempts + 1}] ${baseReason}`,
           },
         });
@@ -171,6 +191,27 @@ async function processOneReply(commentId: string): Promise<void> {
         },
       });
       console.error(`[engage] 🛑 ${commentId} blocked (JSON leak):`, decision.reply.slice(0, 80));
+      return;
+    }
+
+    // Anti-spam guard: a tick can pass the top-of-processDueReplies clock
+    // check at 06:59:50 and reach this point at 07:00:08 (after DB + DeepSeek)
+    // — INSIDE a quiet window that started during processing. Re-check the
+    // wall clock right before publish. If we crossed into a window, revert
+    // the claim and re-queue with fireAt at the window end + jitter.
+    const beforePublishNow = Date.now();
+    const safeFireMs = avoidQuietWindows(beforePublishNow);
+    if (safeFireMs > beforePublishNow) {
+      await prisma.engagementComment.update({
+        where: { id: commentId },
+        data: {
+          status: "queued",
+          fireAt: new Date(safeFireMs),
+        },
+      });
+      console.log(
+        `[engage] ⏸️ ${commentId} re-queued — quiet window started during processing`
+      );
       return;
     }
 
@@ -353,7 +394,9 @@ const styleBootstrap = setTimeout(async () => {
     if (have < 20) {
       console.log("[engage] running initial style-learning (count=" + have + ")");
       const r = await learnThreadsStyle({ postLimit: 100 });
-      console.log(`[engage] style-learning seeded: +${r.inserted} new, ${r.duplicates} dupes, ${r.scannedPosts} posts`);
+      console.log(
+        `[engage] style-learning seeded: +${r.inserted} new, ${r.duplicates} dupes, ${r.scannedPosts} posts, ${r.skippedBotReplies} bot-replies skipped (feedback-loop guard)`
+      );
     }
   } catch (e) {
     console.error("[engage] initial style-learning failed:", (e as Error).message);
@@ -364,7 +407,9 @@ styleBootstrap.unref();
 const styleRefresh = setInterval(() => {
   learnThreadsStyle({ postLimit: 30 })
     .then((r) =>
-      console.log(`[engage] style-learning refresh: +${r.inserted} new, ${r.duplicates} dupes`)
+      console.log(
+        `[engage] style-learning refresh: +${r.inserted} new, ${r.duplicates} dupes, ${r.skippedBotReplies} bot-replies skipped`
+      )
     )
     .catch((e) =>
       console.error("[engage] style-learning refresh failed:", (e as Error).message)
@@ -372,8 +417,72 @@ const styleRefresh = setInterval(() => {
 }, TWELVE_HOURS_MS);
 styleRefresh.unref();
 
+// Auto-backfill new posts from Meta — initial run 60s after boot, then every
+// 6h. Catches posts the user published directly in the Threads/Instagram
+// apps (without using the SMM composer) so the dashboard stays accurate
+// even when the user never clicks "Sync now". Concurrent runs are coalesced
+// by the single-flight mutex inside backfillFromPlatforms.
+//
+// Crucially, when this backfill INGESTS new posts, we ALSO regenerate the
+// AI dashboard caches (Focus this week, Caption patterns, Comment themes).
+// Without that, the dashboard KPIs/top-posts/heatmap auto-update (they read
+// the DB live), but the cached AI insights stay frozen on stale data — which
+// the user saw as "Focus says 'no posts in 7 days' even though I posted 64".
+function logBackfill(prefix: string, r: Awaited<ReturnType<typeof backfillFromPlatforms>>): void {
+  const errPart = r.errors.length > 0 ? ` · errors: ${r.errors.length}` : "";
+  console.log(
+    `${prefix}: +${r.threadsCreated}/+${r.instagramCreated} new posts (scanned ${r.threadsScanned}/${r.instagramScanned})${errPart}`
+  );
+  for (const e of r.errors) console.log(`${prefix}   ! ${e}`);
+}
+
+async function regenAiAlways(prefix: string): Promise<void> {
+  // ALWAYS regen — the previous "only when new posts" gate missed the case
+  // where posts were ingested by an EARLIER cycle but the AI cache hadn't
+  // been regenerated yet (so the Focus card kept reading a 12+ hour stale
+  // payload). 5 DeepSeek calls × 4 cycles/day = ~20/day. Negligible cost
+  // for keeping the dashboard's AI insights aligned with the live KPIs.
+  try {
+    const ai = await regenerateAllAiCaches();
+    const okCount = ai.filter((a) => a.ok).length;
+    console.log(`${prefix}: AI caches regenerated (${okCount}/${ai.length})`);
+    for (const a of ai.filter((x) => !x.ok)) {
+      console.log(`${prefix}   ! AI ${a.kind} failed: ${a.error}`);
+    }
+  } catch (e) {
+    console.error(`${prefix}: AI regen failed:`, (e as Error).message);
+  }
+}
+
+const autoBackfillInitial = setTimeout(() => {
+  backfillFromPlatforms({ daysBack: AUTO_BACKFILL_DAYS })
+    .then(async (r) => {
+      logBackfill("[engage] initial auto-backfill", r);
+      await regenAiAlways("[engage] initial auto-backfill");
+    })
+    .catch((e) =>
+      console.error("[engage] initial auto-backfill failed:", (e as Error).message)
+    );
+}, 60_000);
+autoBackfillInitial.unref();
+
+const autoBackfillInterval = setInterval(() => {
+  backfillFromPlatforms({ daysBack: AUTO_BACKFILL_DAYS })
+    .then(async (r) => {
+      logBackfill("[engage] auto-backfill", r);
+      await regenAiAlways("[engage] auto-backfill");
+    })
+    .catch((e) =>
+      console.error("[engage] auto-backfill failed:", (e as Error).message)
+    );
+}, AUTO_BACKFILL_MS);
+autoBackfillInterval.unref();
+
 console.log(
   "[engage] runner ready (Postgres polling, 90s reply / 5min comments, IST quiet-window aware)"
+);
+console.log(
+  `[engage] dynamic sleep windows today (IST): ${formatDynamicSleepWindowsToday()}`
 );
 
 process.on("SIGINT", () => {
@@ -383,5 +492,7 @@ process.on("SIGINT", () => {
   clearTimeout(styleBootstrap);
   clearInterval(styleRefresh);
   clearTimeout(recoveryTimer);
+  clearTimeout(autoBackfillInitial);
+  clearInterval(autoBackfillInterval);
   process.exit(0);
 });

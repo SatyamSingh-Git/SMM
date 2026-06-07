@@ -2,6 +2,8 @@
 // Two-step publish like Threads: create container → publish.
 // Docs: https://developers.facebook.com/docs/instagram-platform/content-publishing
 
+import { consumeOrThrottle } from "../services/rate-limiter.js";
+
 const IG_API = "https://graph.instagram.com/v22.0";
 
 export class InstagramApiError extends Error {
@@ -16,6 +18,11 @@ async function call<T>(
   method: "GET" | "POST",
   params: Record<string, string>
 ): Promise<T> {
+  // Guard reads against the per-hour budget. Writes go through their
+  // daily publish-side limiters elsewhere.
+  if (method === "GET") {
+    await consumeOrThrottle("instagram_read", "instagram");
+  }
   const url = new URL(`${IG_API}${path}`);
   const body =
     method === "GET" ? undefined : new URLSearchParams(params).toString();

@@ -20,7 +20,7 @@ type TextChatMessage = {
   content: string;
 };
 
-async function deepseekChat(opts: {
+export async function deepseekChat(opts: {
   messages: TextChatMessage[];
   temperature?: number;
   maxTokens?: number;
@@ -99,7 +99,7 @@ async function openrouterChat(opts: {
  * Step 1 of from-image mode: ask Qwen3-VL to describe the photo for a
  * caption writer. Factual, short, no captioning attempt by the VLM.
  */
-async function describeImage(imageUrl: string): Promise<string> {
+export async function describeImage(imageUrl: string): Promise<string> {
   return openrouterChat({
     model: env.OPENROUTER_VISION_MODEL,
     messages: [
@@ -133,7 +133,7 @@ Be specific (e.g. "pastel pink kurti" not "pink top"). If unsure about something
 
 // ---------- Brand voice (DeepSeek prompt) ----------
 
-const BRAND_VOICE = `You are writing captions AS a young Indian female creator named @cute_aisha_vibes. Not a brand. Not a marketer. A 20-year-old who is online a lot, posts at 11pm in her hostel room, half-bored half-flirty, and just... types whatever feels real.
+export const BRAND_VOICE = `You are writing captions AS a young Indian female creator named @cute_aisha_vibes. Not a brand. Not a marketer. A 20-year-old who is online a lot, posts at 11pm in her hostel room, half-bored half-flirty, and just... types whatever feels real.
 
 The whole point is to sound like a real kid posting, not a marketing intern. Be willing to be messy, lowercase, mid-thought, sometimes plain weird. Real engagement comes from "wait this is so me" reactions, not "wow nice caption".
 

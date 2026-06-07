@@ -7,6 +7,8 @@
 //
 // Docs: https://developers.facebook.com/docs/threads/posts
 
+import { consumeOrThrottle } from "../services/rate-limiter.js";
+
 const THREADS_API = "https://graph.threads.net/v1.0";
 
 export class ThreadsApiError extends Error {
@@ -21,6 +23,12 @@ async function call<T>(
   method: "GET" | "POST",
   params: Record<string, string>
 ): Promise<T> {
+  // Guard every read against the per-hour budget. Writes (POSTs) go through
+  // the daily publish-side limiters elsewhere; this catches the high-volume
+  // read traffic (comment poller, backfill, insights).
+  if (method === "GET") {
+    await consumeOrThrottle("threads_read", "threads");
+  }
   const url = new URL(`${THREADS_API}${path}`);
   const body =
     method === "GET" ? undefined : new URLSearchParams(params).toString();

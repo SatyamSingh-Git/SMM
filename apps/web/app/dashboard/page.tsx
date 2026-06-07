@@ -26,6 +26,12 @@ export default function DashboardPage() {
     accountCaptured: number;
     commentsScanned: number | null;
     aiRefreshed: number | null;
+    aiTotal: number | null;
+    // First non-ok AI job's error message — surfaced in the UI when every AI
+    // job failed (e.g. DeepSeek "Insufficient Balance" 402). Without this the
+    // user has no signal that the AI cards are stale because their DeepSeek
+    // account is out of credit.
+    aiErrorSample: string | null;
     errors: number;
     at: number;
   } | null>(null);
@@ -37,12 +43,16 @@ export default function DashboardPage() {
           ? r.backfill.threadsCreated + r.backfill.instagramCreated
           : null;
       const aiRefreshed = r.ai ? r.ai.filter((a) => a.ok).length : null;
+      const aiTotal = r.ai ? r.ai.length : null;
+      const firstError = r.ai?.find((a) => !a.ok)?.error ?? null;
       setLastSync({
         backfillCreated: created,
         postsCaptured: r.post.captured,
         accountCaptured: r.account.captured,
         commentsScanned: r.comments ? r.comments.scanned : null,
         aiRefreshed,
+        aiTotal,
+        aiErrorSample: firstError,
         errors: r.post.errors + r.account.errors,
         at: Date.now(),
       });
@@ -126,12 +136,65 @@ export default function DashboardPage() {
                     <div>{lastSync.commentsScanned} comments scanned on Threads</div>
                   )}
                   {lastSync.aiRefreshed != null && (
-                    <div>AI insights regenerated ({lastSync.aiRefreshed}/5)</div>
+                    <div
+                      className={
+                        lastSync.aiRefreshed === 0
+                          ? "text-[var(--danger)] font-medium"
+                          : ""
+                      }
+                    >
+                      AI insights regenerated ({lastSync.aiRefreshed}/
+                      {lastSync.aiTotal ?? 5})
+                    </div>
                   )}
                 </div>
               )}
             </div>
           </div>
+
+          {/* Loud banner when every AI card failed to regen — almost always
+              this means DeepSeek returned 402 "Insufficient Balance". Without
+              this banner the user sees stale Focus/Caption Patterns cards and
+              has no signal why. */}
+          {lastSync &&
+            lastSync.aiRefreshed === 0 &&
+            lastSync.aiErrorSample && (
+              <div className="rounded-xl border border-[var(--danger)]/40 bg-[var(--danger)]/8 p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-[var(--danger)]">
+                  <span>⚠️</span>
+                  <span>
+                    AI insight generation FAILED for all 5 cards
+                  </span>
+                </div>
+                <div className="text-xs text-[var(--fg)] leading-relaxed">
+                  Your KPIs (followers / reach / posts) update from the live DB
+                  — but the &ldquo;Focus this week&rdquo;, &ldquo;Comment
+                  themes&rdquo;, and &ldquo;Caption patterns&rdquo; cards keep
+                  showing the last successfully-cached payload until the
+                  DeepSeek call succeeds. DeepSeek replied:
+                </div>
+                <div className="rounded-md bg-[var(--surface-2)] p-2 font-mono text-[11px] text-[var(--fg-muted)] break-all">
+                  {lastSync.aiErrorSample}
+                </div>
+                {lastSync.aiErrorSample
+                  .toLowerCase()
+                  .includes("insufficient balance") && (
+                  <div className="text-xs leading-relaxed">
+                    Your DeepSeek account is out of credit. Top it up at{" "}
+                    <a
+                      href="https://platform.deepseek.com/top_up"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-[var(--accent)] underline"
+                    >
+                      platform.deepseek.com/top_up
+                    </a>{" "}
+                    and click &ldquo;Sync now&rdquo; again. The AI cards will
+                    refresh immediately on the first successful call.
+                  </div>
+                )}
+              </div>
+            )}
 
           {/* Breaking-out posts — only renders when there's actually
               something pulling 2x+ baseline. Otherwise invisible. */}

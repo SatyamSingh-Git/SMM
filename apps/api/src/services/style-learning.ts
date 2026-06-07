@@ -15,6 +15,9 @@ export type LearnResult = {
   pairsFound: number;
   inserted: number;
   duplicates: number;
+  // How many of our own bot-auto-replies were filtered out (NOT learned from).
+  // Useful to confirm the feedback-loop guard is working over time.
+  skippedBotReplies: number;
 };
 
 export async function learnThreadsStyle(opts?: { postLimit?: number }): Promise<LearnResult> {
@@ -23,6 +26,7 @@ export async function learnThreadsStyle(opts?: { postLimit?: number }): Promise<
     pairsFound: 0,
     inserted: 0,
     duplicates: 0,
+    skippedBotReplies: 0,
   };
 
   const account = await prisma.account.findFirst({ where: { platform: "threads" } });
@@ -38,6 +42,22 @@ export async function learnThreadsStyle(opts?: { postLimit?: number }): Promise<
     const u = (n.from?.username ?? n.username ?? "").toLowerCase();
     return u !== "" && ourUsername !== null && u === ourUsername;
   };
+
+  // Pre-fetch every Threads-post-id that was the platform side of a previous
+  // bot auto-reply. Style learning should ONLY mimic the user's MANUAL replies
+  // (the ones typed in the Threads app), not the bot's own auto-replies — or
+  // else the bot keeps learning from its own outputs and amplifies any
+  // mistake (e.g. tone drift, a forbidden word that slipped through before a
+  // persona update) over time.
+  const ourBotReplyRows = await prisma.engagementComment.findMany({
+    where: { agentPlatformReplyId: { not: null } },
+    select: { agentPlatformReplyId: true },
+  });
+  const ourBotReplyIds = new Set(
+    ourBotReplyRows
+      .map((r) => r.agentPlatformReplyId)
+      .filter((id): id is string => id !== null)
+  );
 
   // Scan the user's recent posts. 100 is plenty for style — diminishing
   // returns past that, and Threads API rate limits apply.
@@ -66,6 +86,13 @@ export async function learnThreadsStyle(opts?: { postLimit?: number }): Promise<
     for (const node of nodes) {
       if (!isOurs(node)) continue;
       if (!node.text || node.text.trim().length === 0) continue;
+      // Skip our own BOT replies — we only want to learn from the user's
+      // hand-typed manual replies, not the agent's previous auto-replies
+      // (which would create a feedback loop).
+      if (ourBotReplyIds.has(node.id)) {
+        result.skippedBotReplies++;
+        continue;
+      }
       const parentId = node.replied_to?.id;
       if (!parentId) continue;
       // Skip our reply to our own root post (that's a self-reply chain, not a Q&A).

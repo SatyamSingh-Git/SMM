@@ -8,6 +8,7 @@ import { registerMediaRoutes } from "./routes/media.js";
 import { registerAccountRoutes } from "./routes/accounts.js";
 import { registerPostRoutes } from "./routes/posts.js";
 import { registerAiRoutes } from "./routes/ai.js";
+import { registerInspireRoutes } from "./routes/inspire.js";
 import { registerLocationRoutes } from "./routes/locations.js";
 import { registerEngagementRoutes } from "./routes/engagement.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
@@ -29,6 +30,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerAccountRoutes(app);
   await registerPostRoutes(app);
   await registerAiRoutes(app);
+  await registerInspireRoutes(app);
   await registerLocationRoutes(app);
   await registerEngagementRoutes(app);
   await registerDashboardRoutes(app);

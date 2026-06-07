@@ -9,7 +9,7 @@ import {
 } from "../services/dashboard-analytics.js";
 import { generateAiInsights } from "../services/dashboard-ai.js";
 import { syncPostInsights, syncAccountSnapshots } from "../services/insights-sync.js";
-import { backfillFromPlatforms, shouldAutoBackfill } from "../services/backfill.js";
+import { backfillFromPlatforms } from "../services/backfill.js";
 import { pollForNewComments } from "../services/engagement.js";
 import {
   generateCommentThemes,
@@ -24,6 +24,7 @@ import {
 import { getEngagementMix } from "../services/dashboard-engagement-mix.js";
 import { getMomentumPosts } from "../services/dashboard-momentum.js";
 import { getCachedOrNull, writeCached } from "../services/dashboard-cache.js";
+import { regenerateAllAiCaches } from "../services/dashboard-ai-regen.js";
 
 // All AI sections cache to DB. Refresh only fires when the user clicks
 // the section's ↻ button (?refresh=1). Otherwise we return the cached
@@ -36,32 +37,6 @@ function readPlatform(req: { query: unknown }): Platform | undefined {
 }
 function readRefresh(req: { query: unknown }): boolean {
   return (req.query as { refresh?: string }).refresh === "1";
-}
-
-// Regenerate every AI dashboard card from freshly-synced data so one "Sync now"
-// click updates the whole dashboard. Best-effort + parallel: each section is
-// independent, and a failure (no data / DeepSeek hiccup) is captured rather than
-// failing the sync. generateCommentThemes/generateCaptionPatterns cache
-// internally; generateAiInsights returns a payload we cache here.
-async function regenerateAllAiCaches(): Promise<
-  Array<{ kind: string; ok: boolean; error?: string }>
-> {
-  const jobs: Array<[string, () => Promise<unknown>]> = [
-    ["weeklyFocus:instagram", async () =>
-      writeCached("weeklyFocus:instagram", await generateAiInsights("instagram"))],
-    ["weeklyFocus:threads", async () =>
-      writeCached("weeklyFocus:threads", await generateAiInsights("threads"))],
-    ["commentThemes", () => generateCommentThemes()],
-    [captionPatternsKind("instagram"), () => generateCaptionPatterns("instagram")],
-    [captionPatternsKind("threads"), () => generateCaptionPatterns("threads")],
-  ];
-  return Promise.all(
-    jobs.map(([kind, fn]) =>
-      fn()
-        .then(() => ({ kind, ok: true }))
-        .catch((e) => ({ kind, ok: false, error: (e as Error).message }))
-    )
-  );
 }
 
 export async function registerDashboardRoutes(app: FastifyInstance): Promise<void> {
@@ -159,13 +134,25 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
 
   app.post("/dashboard/sync-insights", async (req) => {
     const forceBackfill = (req.query as { backfill?: string }).backfill === "1";
+    // ALWAYS backfill — the user clicks Sync expecting fresh data, and we
+    // can't see posts they made directly in the Threads/Instagram apps
+    // without it. Force flag widens the window from 14 to 60 days.
+    const daysBack = forceBackfill ? 60 : 14;
+    // Wrap in try/catch so a Meta hiccup doesn't 500 the whole Sync button —
+    // the insights / snapshot / comment / AI steps can still succeed even if
+    // backfill errored. The error is surfaced in the response.
     let backfill: Awaited<ReturnType<typeof backfillFromPlatforms>> | null = null;
-    if (forceBackfill || (await shouldAutoBackfill())) {
-      backfill = await backfillFromPlatforms({ daysBack: 60 });
+    let backfillError: string | null = null;
+    try {
+      backfill = await backfillFromPlatforms({ daysBack });
+    } catch (e) {
+      backfillError = (e as Error).message;
+      app.log.error({ err: e }, "sync-insights: backfill failed");
     }
-    const post = await syncPostInsights({
-      postLimit: backfill ? 200 : 50,
-    });
+    // Keep postLimit at 50 even after backfill — bumping to 200 triples Meta
+    // calls in a single burst and was hitting Meta's user-level read budget.
+    // The periodic insights sync will catch up on the rest within hours.
+    const post = await syncPostInsights({ postLimit: 50 });
     const acct = await syncAccountSnapshots();
     // Poll Threads for new comments so the audience cards (super-fans + comment
     // themes) reflect the latest — this is the one "refresh everything" button.
@@ -180,7 +167,7 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
     // dashboard updates on this one click (per-platform AI insights + caption
     // patterns + comment themes).
     const ai = await regenerateAllAiCaches();
-    return { backfill, post, account: acct, comments, ai };
+    return { backfill, backfillError, post, account: acct, comments, ai };
   });
 
   app.post("/dashboard/backfill", async (req) => {

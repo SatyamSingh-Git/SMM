@@ -126,6 +126,29 @@ export const api = {
       "/ai/caption-suggest",
       { method: "POST", json: input }
     ),
+  // ----- "What to Write": post ideas inspired by another post (text/image) -----
+  inspire: (input: {
+    platform: Platform;
+    sourceText?: string;
+    imageUrl?: string;
+    voices?: Array<
+      | "playful"
+      | "cute"
+      | "controversial"
+      | "flirty"
+      | "bold"
+      | "mysterious"
+      | "soft"
+      | "edgy"
+      | "viral-bait"
+    >;
+    languageMix?: "english" | "balanced" | "hindi-heavy";
+    count?: number;
+  }) =>
+    request<{ suggestions: Array<{ caption: string; hashtags: string[] }> }>(
+      "/ai/inspire",
+      { method: "POST", json: input }
+    ),
   updatePost: (
     id: string,
     patch: {
@@ -171,6 +194,29 @@ export const api = {
       styleExamples: number;
       repliesToday: number;
     }>("/engagement/stats"),
+
+  engagementSleepWindows: () =>
+    request<{
+      timezone: string;
+      dateKey: string;
+      todayIst: string;
+      nowIst: string;
+      fixedQuietWindows: Array<{
+        start: string;
+        end: string;
+        durationMin: number;
+        label: string;
+      }>;
+      dynamicSleepWindows: Array<{
+        start: string;
+        end: string;
+        durationMin: number;
+      }>;
+      sessions: {
+        morning: { start: string; end: string };
+        evening: { start: string; end: string };
+      };
+    }>("/engagement/sleep-windows"),
   learnStyle: () =>
     request<{
       scannedPosts: number;

@@ -13,6 +13,7 @@ import {
   Eye,
   Loader2,
   MessageSquare,
+  Moon,
   RefreshCw,
   RotateCw,
   X,
@@ -95,6 +96,9 @@ export function EngagementPanel() {
           warn={(statsQ.data?.repliesToday ?? 0) >= DAILY_REPLY_CAP}
         />
       </div>
+
+      <SleepScheduleCard />
+
 
       {/* Status filter tabs */}
       <div className="mb-3 flex gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-1">
@@ -390,6 +394,178 @@ function StatTile({
       )}
     </div>
   );
+}
+
+// Compact card showing the fixed quiet windows + today's randomized dynamic
+// sleep windows. Lets the user verify the runner is pausing at the times
+// they expect. The windows are deterministic from the IST date — same date,
+// same windows, every fetch.
+function SleepScheduleCard() {
+  const [open, setOpen] = React.useState(false);
+  const q = useQuery({
+    queryKey: ["engagement", "sleep-windows"],
+    queryFn: api.engagementSleepWindows,
+    // Re-fetch every 5 min so the "now" indicator stays roughly fresh and the
+    // windows refresh after IST midnight without a manual reload.
+    refetchInterval: 5 * 60_000,
+    staleTime: 4 * 60_000,
+  });
+
+  const d = q.data;
+  const nowMin = d ? hmToMinutes(d.nowIst) : 0;
+  const inWindow =
+    d &&
+    [...d.fixedQuietWindows, ...d.dynamicSleepWindows].some((w) => {
+      const s = hmToMinutes(w.start);
+      const e = hmToMinutes(w.end);
+      return nowMin >= s && nowMin < e;
+    });
+
+  return (
+    <div className="mb-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-[var(--surface-2)]"
+      >
+        <div className="flex items-center gap-1.5">
+          <Moon className="h-3.5 w-3.5 text-[var(--accent)]" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--fg-muted)]">
+            Sleep schedule today (IST)
+          </span>
+          {d && (
+            <span
+              className={cn(
+                "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                inWindow
+                  ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                  : "bg-[var(--success)]/15 text-[var(--success)]"
+              )}
+              title={`Now: ${d.nowIst} IST`}
+            >
+              {inWindow ? "paused" : "active"} · {d.nowIst}
+            </span>
+          )}
+        </div>
+        {open ? (
+          <ChevronUp className="h-3.5 w-3.5 text-[var(--fg-muted)]" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-[var(--fg-muted)]" />
+        )}
+      </button>
+
+      {open && (
+        <div className="border-t border-[var(--border)] p-3 space-y-3">
+          {q.isLoading && <div className="text-[11px] text-[var(--fg-muted)]">Loading…</div>}
+          {q.error && (
+            <div className="text-[11px] text-[var(--danger)]">
+              Couldn&apos;t load sleep schedule — endpoint may not be deployed yet.
+            </div>
+          )}
+          {d && (
+            <>
+              <div>
+                <div className="text-[10px] font-medium uppercase tracking-wider text-[var(--fg-muted)] mb-1">
+                  Fixed quiet windows (always)
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {d.fixedQuietWindows.map((w) => (
+                    <WindowChip
+                      key={w.start}
+                      start={w.start}
+                      end={w.end}
+                      label={w.label}
+                      nowMin={nowMin}
+                      tone="muted"
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-medium uppercase tracking-wider text-[var(--fg-muted)] mb-1">
+                  Random sleeps today ({d.dynamicSleepWindows.length}) · seeded
+                  from {d.dateKey}
+                </div>
+                {d.dynamicSleepWindows.length === 0 ? (
+                  <div className="text-[11px] text-[var(--fg-muted)]">
+                    No dynamic sleeps for today (config issue?).
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {d.dynamicSleepWindows.map((w, i) => (
+                      <WindowChip
+                        key={i}
+                        start={w.start}
+                        end={w.end}
+                        nowMin={nowMin}
+                        tone="accent"
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="mt-1.5 text-[10px] text-[var(--fg-subtle)] leading-relaxed">
+                  Computed deterministically from the IST date — same date
+                  always produces the same windows, on any process. Resets at
+                  IST midnight.
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WindowChip({
+  start,
+  end,
+  label,
+  nowMin,
+  tone,
+}: {
+  start: string;
+  end: string;
+  label?: string;
+  nowMin: number;
+  tone: "muted" | "accent";
+}) {
+  const sMin = hmToMinutes(start);
+  const eMin = hmToMinutes(end);
+  const isNow = nowMin >= sMin && nowMin < eMin;
+  return (
+    <div
+      className={cn(
+        "rounded-md border px-2 py-1 text-center",
+        isNow
+          ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+          : tone === "accent"
+            ? "border-[var(--border)] bg-[var(--surface-2)]"
+            : "border-[var(--border)] bg-[var(--surface-2)]/50"
+      )}
+      title={label}
+    >
+      <div className="text-[11px] font-mono font-semibold">
+        {start}–{end}
+      </div>
+      {label && (
+        <div className="text-[9px] text-[var(--fg-subtle)] uppercase tracking-wider">
+          {label}
+        </div>
+      )}
+      {isNow && (
+        <div className="text-[9px] text-[var(--accent)] uppercase tracking-wider font-medium">
+          now
+        </div>
+      )}
+    </div>
+  );
+}
+
+function hmToMinutes(hm: string): number {
+  const m = hm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return 0;
+  return parseInt(m[1]!, 10) * 60 + parseInt(m[2]!, 10);
 }
 
 function StatusBadge({ status }: { status: EngagementStatus }) {

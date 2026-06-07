@@ -17,11 +17,14 @@ import {
 // haven't already ingested or that doesn't already have a reply, insert a
 // queued EngagementComment + plan its reply fire-time.
 
-// Look back this far when polling for posts. People sometimes comment on
-// posts that are 1-2 weeks old (algorithm resurfaces them), so we go wider
-// than the daily reply window — the reply runner enforces "same day" at
-// send time, not the poller.
-const LOOKBACK_DAYS = 14;
+// Look back this far when polling for posts. People comment on older posts
+// sometimes (algorithm resurfaces), but each extra day adds N=posts-per-day
+// fetchReplies calls per cycle — and at the user's posting cadence the 14-day
+// window was driving Meta-read traffic at ~1,200/hr per the read-side limiter
+// audit. 7 days covers the dashboard-relevant window AND drops steady-state
+// load by half. Older-but-still-getting-comments posts are handled by the
+// Sync button (which explicitly backfills 14d / 60d).
+const LOOKBACK_DAYS = 7;
 // Threads API max per page. Scan up to this many recent posts each poll so
 // active accounts (posting many times a week) don't miss comments on the
 // older-but-still-getting-replies posts. Bumped from 25 after observing the

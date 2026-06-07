@@ -5,10 +5,19 @@
 // so the margin absorbs a cold start.
 
 export const LIMITS = {
+  // Outbound publish/reply caps (per-day, sliding 24h).
   instagram_total: { count: 80, windowMs: 24 * 3_600_000 },
   instagram_carousel: { count: 40, windowMs: 24 * 3_600_000 },
   threads_post: { count: 200, windowMs: 24 * 3_600_000 },
   threads_reply: { count: 800, windowMs: 24 * 3_600_000 },
+  // Inbound READ caps (per-hour, sliding 60min). Meta's documented user-level
+  // read budget is opaque, but our previous comment-poller load was ~1200/hr
+  // — these caps sit comfortably above that to absorb Sync bursts AND below
+  // any plausible Meta ceiling, so a runaway loop fails loudly here instead
+  // of silently against Meta. Combined with the cadence + lookback reductions
+  // below, steady-state stays well under 600/hr.
+  threads_read: { count: 1500, windowMs: 3_600_000 },
+  instagram_read: { count: 1500, windowMs: 3_600_000 },
 } as const;
 
 export type LimiterKind = keyof typeof LIMITS;
@@ -71,4 +80,23 @@ export async function usage(
   const now = Date.now();
   const live = prune(keyFor(accountId, kind), windowMs, now);
   return { used: live.length, limit: count, windowMs };
+}
+
+/**
+ * Consume a read-side slot, or throw a clear error if the cap is hit. Used by
+ * the Threads + Instagram publisher `call()` functions to guard every GET.
+ * We deliberately do NOT sleep here — sleeping would let one slow caller
+ * starve the comment poller's tick budget and cause overlapping cycles.
+ * Throwing surfaces clearly in the caller's per-iteration try/catch and
+ * keeps the rest of the cycle moving.
+ */
+export async function consumeOrThrottle(
+  kind: LimiterKind,
+  label: string
+): Promise<void> {
+  const check = await checkAndConsume("global", kind);
+  if (check.allowed) return;
+  throw new Error(
+    `[${label}] read rate limit hit (${check.current}/${check.limit} per ${Math.round(LIMITS[kind].windowMs / 60_000)}min) — retry in ${Math.ceil(check.retryAfterMs / 1000)}s`
+  );
 }

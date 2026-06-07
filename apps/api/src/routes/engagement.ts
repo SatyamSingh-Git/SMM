@@ -4,7 +4,11 @@ import { prisma } from "@smm/db";
 import { learnThreadsStyle } from "../services/style-learning.js";
 import { pollForNewComments } from "../services/engagement.js";
 import { generateThreadsReply } from "../services/reply-generator.js";
-import { todaysReplyCount } from "../services/reply-schedule.js";
+import {
+  todaysReplyCount,
+  avoidQuietWindows,
+  getDynamicSleepWindowsForDay,
+} from "../services/reply-schedule.js";
 
 const ListQuery = z.object({
   status: z
@@ -12,6 +16,12 @@ const ListQuery = z.object({
     .optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
+
+function minutesToHm(min: number): string {
+  const h = Math.floor(min / 60) % 24;
+  const m = min % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
 
 export async function registerEngagementRoutes(app: FastifyInstance): Promise<void> {
   // GET /engagement/comments — list recent comments + status
@@ -50,6 +60,43 @@ export async function registerEngagementRoutes(app: FastifyInstance): Promise<vo
       todaysReplyCount(),
     ]);
     return { counts, styleExamples: styleCount, repliesToday };
+  });
+
+  // GET /engagement/sleep-windows — show the current quiet windows so the
+  // user can verify the runner is using what they expect. Returns both the
+  // fixed quiet windows AND today's deterministic dynamic windows.
+  app.get("/engagement/sleep-windows", async (req) => {
+    const dateParam = (req.query as { date?: string }).date;
+    // Convert UTC now → IST date "YYYY-MM-DD"
+    const istNow = new Date(Date.now() + (5 * 60 + 30) * 60_000);
+    const todayKey = `${istNow.getUTCFullYear()}-${String(
+      istNow.getUTCMonth() + 1
+    ).padStart(2, "0")}-${String(istNow.getUTCDate()).padStart(2, "0")}`;
+    const dateKey =
+      dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : todayKey;
+    const dynamic = getDynamicSleepWindowsForDay(dateKey).map((w) => ({
+      start: minutesToHm(w.startMin),
+      end: minutesToHm(w.endMin),
+      durationMin: w.endMin - w.startMin,
+    }));
+    return {
+      timezone: "IST (UTC+5:30)",
+      dateKey,
+      todayIst: todayKey,
+      nowIst: `${String(istNow.getUTCHours()).padStart(2, "0")}:${String(
+        istNow.getUTCMinutes()
+      ).padStart(2, "0")}`,
+      fixedQuietWindows: [
+        { start: "00:00", end: "06:00", durationMin: 360, label: "overnight" },
+        { start: "11:00", end: "12:00", durationMin: 60, label: "morning break" },
+        { start: "14:00", end: "16:00", durationMin: 120, label: "afternoon break" },
+      ],
+      dynamicSleepWindows: dynamic,
+      sessions: {
+        morning: { start: "06:00", end: "11:00" },
+        evening: { start: "16:00", end: "24:00" },
+      },
+    };
   });
 
   // POST /engagement/learn-style — kick off the style-learning import
@@ -126,10 +173,16 @@ export async function registerEngagementRoutes(app: FastifyInstance): Promise<vo
       if (c.status === "replied")
         return reply.code(400).send({ error: "already replied" });
 
-      // fireAt=now() so the polling reply runner picks it up on its next tick.
+      // fireAt = now (pushed past any active quiet window) so the runner
+      // picks it up on its next tick — but never schedules into a window.
+      const fireAtMs = avoidQuietWindows(Date.now());
       await prisma.engagementComment.update({
         where: { id: c.id },
-        data: { status: "queued", lastError: null, fireAt: new Date() },
+        data: {
+          status: "queued",
+          lastError: null,
+          fireAt: new Date(fireAtMs),
+        },
       });
       return { ok: true };
     }

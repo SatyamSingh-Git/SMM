@@ -231,3 +231,7 @@ export type EngagementComment = {
   agentPlatformReplyId: string | null;
   lastError: string | null;
 };
+
+// "What to Write" — a post idea generated in the creator's voice, inspired by
+// another post. Same shape as a caption suggestion (caption + optional hashtags).
+export type InspireSuggestion = { caption: string; hashtags: string[] };
