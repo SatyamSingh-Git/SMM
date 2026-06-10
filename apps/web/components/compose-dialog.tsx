@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Calendar,
   Camera,
@@ -37,6 +37,8 @@ import { AssetDetailDialog, type AssetMeta } from "./asset-detail-dialog";
 import { ensureJpeg } from "@/lib/image-convert";
 import { EmojiPickerButton } from "./emoji-picker-button";
 import { insertAtCursor } from "@/lib/insert-at-cursor";
+import { lintCaption, checkHook } from "@/lib/caption-lint";
+import { nextIstSlot, slotLabel } from "@/lib/time";
 
 type Props = {
   open: boolean;
@@ -109,35 +111,68 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
     if (!open) return;
 
     if (editingPost) {
-      // Hydrate from the existing post.
+      // Hydrate from the existing post — including the advanced fields
+      // (per-asset alt text + user tags, reply chain, IG extras) that the
+      // payload actually carries. Previously these were silently dropped on
+      // every edit, which is why editing a finished post felt destructive.
       setPlatform(editingPost.platform);
       setType(editingPost.type);
       setCaption(editingPost.caption ?? "");
       setScheduledAt(
         editingPost.scheduledAt ? toLocalDatetime(new Date(editingPost.scheduledAt)) : ""
       );
-      setMedia(
-        editingPost.assets
-          .sort((a, b) => a.position - b.position)
-          .map((pa) => ({
-            id: pa.asset.id,
-            publicUrl: pa.asset.publicUrl,
-            mimeType: pa.asset.mimeType,
-            altText: "",
-            userTags: [],
-          }))
+
+      const sortedAssets = [...editingPost.assets].sort(
+        (a, b) => a.position - b.position
       );
-      // We don't currently round-trip altText / userTags / replyChain / igExtras
-      // from list endpoint (the calendar query doesn't include them). Edit
-      // refills the basics; user can re-add advanced details if needed.
-      setChain([{ text: "", media: [] }, { text: "", media: [] }]);
-      setLocation(null);
-      setCollaborators([]);
+      // Map asset id -> full AssetMeta so reply-chain segments can re-link media.
+      const assetById = new Map<string, AssetMeta>();
+      for (const pa of sortedAssets) {
+        assetById.set(pa.asset.id, {
+          id: pa.asset.id,
+          publicUrl: pa.asset.publicUrl,
+          mimeType: pa.asset.mimeType,
+          altText: pa.altText ?? "",
+          userTags: pa.userTagsJson ?? [],
+        });
+      }
+      setMedia(sortedAssets.map((pa) => assetById.get(pa.asset.id)!));
+
+      // Reply chain: rebuild segments from replyChainJson, re-linking each
+      // segment's assetIds back to the uploaded media.
+      const chainJson = editingPost.replyChainJson;
+      if (editingPost.type === "threads_reply_chain" && chainJson && chainJson.length > 0) {
+        setChain(
+          chainJson.map((seg) => ({
+            text: seg.text ?? "",
+            media: (seg.assetIds ?? [])
+              .map((id) => assetById.get(id))
+              .filter((m): m is AssetMeta => !!m),
+          }))
+        );
+      } else {
+        setChain([{ text: "", media: [] }, { text: "", media: [] }]);
+      }
+
+      // IG extras.
+      const ig = editingPost.igExtrasJson ?? null;
+      setLocation(
+        ig?.locationId
+          ? { id: ig.locationId, name: ig.locationName ?? ig.locationId }
+          : null
+      );
+      setCollaborators(ig?.collaborators ?? []);
       setCollabInput("");
-      setThumbOffsetSec(0);
-      setCoverUrl("");
+      setThumbOffsetSec(ig?.thumbOffsetMs ? ig.thumbOffsetMs / 1000 : 0);
+      setCoverUrl(ig?.coverUrl ?? "");
       setAiLabel(editingPost.aiGenerated);
-      setIgDetailsOpen(editingPost.aiGenerated);
+      setIgDetailsOpen(
+        editingPost.aiGenerated ||
+          !!ig?.locationId ||
+          (ig?.collaborators?.length ?? 0) > 0 ||
+          !!ig?.coverUrl ||
+          !!ig?.thumbOffsetMs
+      );
       setAssetEditingId(null);
       return;
     }
@@ -351,6 +386,41 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
     },
   });
 
+  // Deterministic, zero-LLM caption checks (captions only — never replies).
+  const captionWarnings = React.useMemo(
+    () => (cfg.captionMax > 0 ? lintCaption(caption) : []),
+    [caption, cfg.captionMax]
+  );
+  const hookBadges = React.useMemo(
+    () => (cfg.captionMax > 0 ? checkHook(caption, platform, type) : []),
+    [caption, platform, type, cfg.captionMax]
+  );
+
+  // "Rewrite hook" — the only thing here that hits DeepSeek, and only on click.
+  const [hookOptions, setHookOptions] = React.useState<string[] | null>(null);
+  const rewriteHook = useMutation({
+    mutationFn: () =>
+      api.rewriteHook({ platform, caption: caption.trim() }),
+    onSuccess: (hooks) => setHookOptions(hooks),
+  });
+  function applyHook(newFirst: string) {
+    const rest = caption.split("\n").slice(1).join("\n");
+    setCaption(rest ? `${newFirst}\n${rest}` : newFirst);
+    setHookOptions(null);
+  }
+
+  // Data-driven IST peak-time chips (from the dashboard best-times analytics).
+  const bestTimesQ = useQuery({
+    queryKey: ["best-times", platform],
+    queryFn: () => api.dashboardBestTimes(platform),
+    enabled: open,
+    staleTime: 60 * 60_000,
+  });
+  const peakChips = (bestTimesQ.data?.slots ?? []).slice(0, 3).map((s) => ({
+    label: slotLabel(s.dayOfWeek, s.hourIst),
+    get: () => nextIstSlot(s.dayOfWeek, s.hourIst),
+  }));
+
   const validation = (() => {
     if (!account) return "No account connected for " + platform;
     if (cfg.media === "single-image" && media.length === 0) return "Add one image.";
@@ -500,11 +570,91 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
                     </div>
                   </div>
                   <div className="mt-1.5 flex items-center justify-between text-[11px] text-[var(--fg-subtle)]">
-                    <Button type="button" variant="ghost" size="sm" className="h-7 -ml-2 px-2 text-[var(--accent)] hover:text-[var(--accent)]" onClick={() => setAiOpen(true)}>
-                      <Sparkles className="h-3.5 w-3.5" /> AI suggest
-                    </Button>
-                    <span>{caption.length} / {cfg.captionMax}</span>
+                    <div className="flex items-center gap-1">
+                      <Button type="button" variant="ghost" size="sm" className="h-7 -ml-2 px-2 text-[var(--accent)] hover:text-[var(--accent)]" onClick={() => setAiOpen(true)}>
+                        <Sparkles className="h-3.5 w-3.5" /> AI suggest
+                      </Button>
+                      {caption.trim().length > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2"
+                          onClick={() => rewriteHook.mutate()}
+                          disabled={rewriteHook.isPending}
+                          title="Rewrite just the first line (the hook)"
+                        >
+                          {rewriteHook.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Wand2 className="h-3.5 w-3.5" />
+                          )}
+                          Rewrite hook
+                        </Button>
+                      )}
+                    </div>
+                    <span
+                      className={cn(
+                        caption.length > cfg.captionMax && "text-[var(--danger)]"
+                      )}
+                    >
+                      {caption.length} / {cfg.captionMax}
+                    </span>
                   </div>
+
+                  {/* Hook badges + lint warnings (deterministic, no LLM). */}
+                  {(hookBadges.length > 0 || captionWarnings.length > 0) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {hookBadges.map((b, i) => (
+                        <span
+                          key={`h${i}`}
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            b.tone === "good"
+                              ? "bg-[var(--success)]/15 text-[var(--success)]"
+                              : "bg-amber-500/15 text-amber-600"
+                          )}
+                        >
+                          {b.label}
+                        </span>
+                      ))}
+                      {captionWarnings.map((w, i) => (
+                        <span
+                          key={`w${i}`}
+                          className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-amber-600"
+                          title={w.message}
+                        >
+                          {w.message}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Rewrite-hook options popover */}
+                  {hookOptions && hookOptions.length > 0 && (
+                    <div className="mt-2 space-y-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2">
+                      <div className="flex items-center justify-between px-1 text-[10px] uppercase tracking-wider text-[var(--fg-muted)]">
+                        Tap a stronger hook
+                        <button
+                          type="button"
+                          onClick={() => setHookOptions(null)}
+                          className="text-[var(--fg-subtle)] hover:text-fg"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                      {hookOptions.map((h, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => applyHook(h)}
+                          className="block w-full rounded-md border border-[var(--border)] bg-[var(--surface)] p-2 text-left text-xs hover:border-[var(--accent)]"
+                        >
+                          {h}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -655,20 +805,31 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
 
               {/* Schedule */}
               <div>
-                <label className="text-xs font-medium text-[var(--fg-muted)]">Schedule</label>
+                <label className="text-xs font-medium text-[var(--fg-muted)]">
+                  Schedule <span className="text-[var(--fg-subtle)]">(local time)</span>
+                </label>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   <div className="relative">
                     <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--fg-subtle)]" />
                     <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className="pl-8 w-[230px]" />
                   </div>
-                  {[
-                    { label: "Tonight 8pm", get: tonight8 },
-                    { label: "Tomorrow 9am", get: tomorrow9 },
-                    { label: "Next Mon 12pm", get: nextMon12 },
-                  ].map((q) => (
-                    <Button key={q.label} variant="soft" size="sm" onClick={() => setScheduledAt(toLocalDatetime(q.get()))}>{q.label}</Button>
+                  {/* Data-driven IST peak chips when we have history; else fallbacks. */}
+                  {(peakChips.length > 0
+                    ? peakChips
+                    : [
+                        { label: "Tonight 8pm", get: tonight8 },
+                        { label: "Tomorrow 9am", get: tomorrow9 },
+                        { label: "Next Mon 12pm", get: nextMon12 },
+                      ]
+                  ).map((q) => (
+                    <Button key={q.label} variant="soft" size="sm" onClick={() => setScheduledAt(toLocalDatetime(q.get()))} title={peakChips.length > 0 ? "Your best-performing IST slot" : undefined}>{q.label}</Button>
                   ))}
                 </div>
+                {peakChips.length > 0 && (
+                  <div className="mt-1 text-[10px] text-[var(--fg-subtle)]">
+                    Chips are your top IST engagement slots from post history.
+                  </div>
+                )}
               </div>
 
               {create.isError && (

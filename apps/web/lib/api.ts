@@ -79,6 +79,32 @@ export const api = {
   health: () => request<{ ok: boolean; killSwitch: boolean }>("/health"),
   listAccounts: () =>
     request<{ accounts: Account[] }>("/accounts").then((r) => r.accounts),
+  refreshToken: (accountId: string) =>
+    request<{ result: unknown; accounts: Account[] }>(
+      `/accounts/${accountId}/refresh-token`,
+      { method: "POST" }
+    ),
+  getPost: (id: string) => request<Post>(`/posts/${id}`),
+  restorePost: (id: string) =>
+    request<Post>(`/posts/${id}/restore`, { method: "POST" }),
+  rewriteHook: (input: { platform: Platform; caption: string }) =>
+    request<{ hooks: string[] }>("/ai/rewrite-hook", {
+      method: "POST",
+      json: input,
+    }).then((r) => r.hooks),
+  carouselCompanion: (prompts: string[]) =>
+    request<{
+      masterCaption: string;
+      hashtags: string[];
+      slides: Array<{ micro: string; alt: string }>;
+    }>("/ai/image-prompts/carousel-text", {
+      method: "POST",
+      json: { prompts },
+    }),
+  dashboardShareHeavy: (platform?: Platform) =>
+    request<{ posts: TopPostRow[] }>(
+      `/dashboard/share-heavy${qsPlatform(platform)}`
+    ).then((r) => r.posts),
   listPosts: (params?: {
     from?: string;
     to?: string;

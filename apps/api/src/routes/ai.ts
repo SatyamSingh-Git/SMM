@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { suggestCaptions } from "../services/ai.js";
+import { suggestCaptions, rewriteFirstLine } from "../services/ai.js";
 
 const VoiceModifier = z.enum([
   "playful",
@@ -61,6 +61,24 @@ export async function registerAiRoutes(app: FastifyInstance): Promise<void> {
         count: d.count,
       });
       return { suggestions };
+    } catch (e) {
+      return reply.code(502).send({ error: (e as Error).message });
+    }
+  });
+
+  // Rewrite just the hook (first line). Click-only — never per-keystroke.
+  app.post("/ai/rewrite-hook", async (req, reply) => {
+    const Body = z.object({
+      platform: z.enum(["instagram", "threads"]),
+      caption: z.string().min(1).max(5000),
+    });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    try {
+      const hooks = await rewriteFirstLine(parsed.data);
+      return { hooks };
     } catch (e) {
       return reply.code(502).send({ error: (e as Error).message });
     }

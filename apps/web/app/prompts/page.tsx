@@ -162,6 +162,16 @@ export default function PromptsPage() {
   const prompts: string[] = generate.data ?? [];
   const canGenerate = scene.trim().length >= 2 && !generate.isPending;
 
+  // Carousel companion — caption + per-slide micro-captions + alt text for the
+  // generated set, so a multi-image post is one step instead of three.
+  const companion = useMutation({
+    mutationFn: () => api.carouselCompanion(prompts),
+  });
+  React.useEffect(() => {
+    // New prompt set invalidates any previous companion text.
+    companion.reset();
+  }, [generate.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function togglePick(group: SingleOptionKey, value: string) {
     setPicks((p) => ({ ...p, [group]: p[group] === value ? "" : value }));
   }
@@ -500,17 +510,77 @@ export default function PromptsPage() {
                     {prompts.length} prompt{prompts.length === 1 ? "" : "s"} ·
                     same shoot, different frames
                   </span>
-                  <Button variant="soft" size="sm" onClick={copyAll}>
-                    {copiedAll ? (
-                      <>
-                        <Check className="h-3.5 w-3.5" /> Copied all
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5" /> Copy all
-                      </>
+                  <div className="flex items-center gap-1.5">
+                    {prompts.length > 1 && (
+                      <Button
+                        variant="soft"
+                        size="sm"
+                        onClick={() => companion.mutate()}
+                        disabled={companion.isPending}
+                        title="Write IG caption + per-slide captions + alt text"
+                      >
+                        {companion.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                        Carousel captions
+                      </Button>
                     )}
-                  </Button>
+                    <Button variant="soft" size="sm" onClick={copyAll}>
+                      {copiedAll ? (
+                        <>
+                          <Check className="h-3.5 w-3.5" /> Copied all
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" /> Copy all
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {companion.data && (
+                <div className="space-y-2 rounded-xl border border-[var(--accent)]/40 bg-[var(--accent-soft)]/30 p-4">
+                  <div className="text-[11px] uppercase tracking-wider text-[var(--accent)]">
+                    Carousel post text
+                  </div>
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--fg-subtle)]">
+                      IG caption
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-sm">
+                      {companion.data.masterCaption}
+                    </div>
+                    {companion.data.hashtags.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1 text-[11px] text-[var(--accent)]">
+                        {companion.data.hashtags.map((h, i) => (
+                          <span key={i}>#{h.replace(/^#/, "")}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {companion.data.slides.map((s, i) => (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-xs"
+                    >
+                      <div className="text-[10px] uppercase tracking-wider text-[var(--fg-subtle)]">
+                        Slide {i + 1}
+                      </div>
+                      <div className="mt-1">{s.micro}</div>
+                      <div className="mt-1 text-[var(--fg-muted)]">
+                        <span className="text-[var(--fg-subtle)]">alt:</span> {s.alt}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {companion.isError && (
+                <div className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 p-2 text-[11px] text-[var(--danger)]">
+                  {(companion.error as Error).message}
                 </div>
               )}
 

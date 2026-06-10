@@ -587,3 +587,47 @@ Return STRICT JSON:
           : [],
   }));
 }
+
+// Rewrite ONLY the first line (the hook) of a caption. The first ~125 chars are
+// what 95% of viewers see before "more"; a weak hook caps reach. Returns 3
+// alternative opening lines in the SAME brand voice (lowercase, mid-thought,
+// no marketing polish). The rest of the caption is left untouched by the caller.
+export async function rewriteFirstLine(opts: {
+  platform: "instagram" | "threads";
+  caption: string;
+}): Promise<string[]> {
+  const firstLine = (opts.caption.split("\n")[0] ?? opts.caption).trim();
+  if (!firstLine) return [];
+  const cutoff = opts.platform === "instagram" ? 125 : 80;
+  const userText = `Rewrite ONLY the opening line (the hook) of this ${opts.platform} post. Keep @cute_aisha_vibes's exact voice — lowercase ok, mid-thought ok, real-girl-typing, NOT marketing copy. The hook must land in the first ${cutoff} characters (that's all most people see before "more"). Do NOT add hashtags. Do NOT explain.
+
+Current opening line:
+"""${firstLine.replace(/"""/g, '\\"\\"\\"')}"""
+
+Give 3 stronger alternatives — different angles (curiosity / bold claim / relatable confession), each ≤${cutoff} chars, each in her voice.
+
+Return STRICT JSON: {"hooks":["...","...","..."]}`;
+
+  const raw = await deepseekChat({
+    messages: [
+      { role: "system", content: BRAND_VOICE },
+      { role: "user", content: userText },
+    ],
+    temperature: 0.95,
+    maxTokens: 400,
+    jsonMode: true,
+    cacheLabel: "rewrite-hook",
+  });
+  let parsed: { hooks?: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, ""));
+  }
+  const hooks = Array.isArray(parsed.hooks) ? parsed.hooks : [];
+  return hooks
+    .filter((h): h is string => typeof h === "string")
+    .map((h) => h.trim().slice(0, cutoff))
+    .filter(Boolean)
+    .slice(0, 3);
+}

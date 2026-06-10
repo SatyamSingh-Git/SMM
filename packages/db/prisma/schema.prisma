@@ -52,6 +52,11 @@ model Account {
   accessTokenEncrypted String
   // For IG long-lived tokens, expiry ~60 days; we refresh ≥7 days early.
   tokenExpiresAt       DateTime?
+  // Token-refresh health. Written by the refresh loop on every attempt so the
+  // UI can warn about silent failures BEFORE publishing breaks. lastRefreshError
+  // is null when the most recent refresh succeeded (or no refresh was needed).
+  lastRefreshAt        DateTime?
+  lastRefreshError     String?
   // For IG only: the linked Facebook Page id (required for publishing).
   fbPageId             String?
   createdAt            DateTime @default(now())
@@ -105,6 +110,10 @@ model Post {
   caption         String?
   // Scheduled publish time (UTC). Null = draft.
   scheduledAt     DateTime?
+  // Actual publish time (UTC). Set once on successful publish (or to the
+  // platform timestamp on backfill). Unlike updatedAt this never moves on edit,
+  // so velocity analytics ("first-hour engagement") stay honest.
+  publishedAt     DateTime?
   status          PostStatus @default(draft)
   // Whatever the platform returns after publish.
   platformPostId  String?

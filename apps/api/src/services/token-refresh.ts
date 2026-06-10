@@ -67,6 +67,9 @@ export async function refreshExpiringTokens(opts?: { force?: boolean }): Promise
         data: {
           accessTokenEncrypted: encryptToken(out.access_token),
           tokenExpiresAt: newExpiry,
+          // Health: record the successful touch and clear any prior error.
+          lastRefreshAt: new Date(),
+          lastRefreshError: null,
         },
       });
       refreshed++;
@@ -76,6 +79,14 @@ export async function refreshExpiringTokens(opts?: { force?: boolean }): Promise
     } catch (e) {
       const msg = (e as Error).message;
       failed.push({ accountId: acc.id, error: msg });
+      // Persist the failure so the UI can surface it BEFORE publishing breaks.
+      // Best-effort: never let the health write mask the original error.
+      await prisma.account
+        .update({
+          where: { id: acc.id },
+          data: { lastRefreshAt: new Date(), lastRefreshError: msg.slice(0, 500) },
+        })
+        .catch(() => undefined);
       console.error(`[token-refresh] ❌ ${acc.platform}:${acc.username ?? acc.id}:`, msg);
     }
   }

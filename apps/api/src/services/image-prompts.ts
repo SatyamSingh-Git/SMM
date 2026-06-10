@@ -14,6 +14,7 @@
 import {
   IMAGE_PROMPT_SYSTEM,
   BRAND_VOICE_VISUAL_FALLBACK,
+  BRAND_VOICE,
   deepseekChat,
 } from "./ai.js";
 
@@ -642,6 +643,80 @@ Return STRICT JSON:
     .map((p) => p.trim())
     .filter((p) => p.length > 0)
     .slice(0, n);
+}
+
+// Carousel companion text — given the generated image prompts (each describes
+// one slide of the same shoot), produce a ready-to-post IG caption + one short
+// Threads-length micro-caption per slide + per-slide alt text. Turns a 3-image
+// shoot into a one-step publish instead of writing captions by hand.
+export type CarouselCompanion = {
+  masterCaption: string;
+  hashtags: string[];
+  slides: Array<{ micro: string; alt: string }>;
+};
+
+export async function generateCarouselCompanion(
+  prompts: string[]
+): Promise<CarouselCompanion> {
+  const slides = prompts.slice(0, 10);
+  if (slides.length === 0) throw new Error("no prompts provided");
+  const slideBlock = slides
+    .map((p, i) => `Slide ${i + 1}: ${p}`)
+    .join("\n\n");
+
+  const userText = `Below are ${slides.length} image-generation prompts — each describes ONE slide of the SAME photo carousel for @cute_aisha_vibes. Write the post text for this carousel.
+
+${slideBlock}
+
+Return STRICT JSON:
+{
+  "masterCaption": "one Instagram caption for the whole carousel, in her voice (lowercase ok, 4-6 emojis, ≤300 chars)",
+  "hashtags": ["8-15 IG hashtags, no # prefix"],
+  "slides": [ { "micro": "a short Threads-length line for THIS slide, ≤80 chars, in her voice", "alt": "factual accessibility alt-text describing THIS slide's image, no emojis, ≤100 chars" } ]
+}
+The "slides" array MUST have exactly ${slides.length} items in order.`;
+
+  const raw = await deepseekChat({
+    messages: [
+      { role: "system", content: BRAND_VOICE },
+      { role: "user", content: userText },
+    ],
+    temperature: 0.9,
+    maxTokens: 1200,
+    jsonMode: true,
+    cacheLabel: "carousel-companion",
+  });
+  let parsed: {
+    masterCaption?: unknown;
+    hashtags?: unknown;
+    slides?: unknown;
+  };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = JSON.parse(
+      raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "")
+    );
+  }
+  const rawSlides = Array.isArray(parsed.slides) ? parsed.slides : [];
+  return {
+    masterCaption:
+      typeof parsed.masterCaption === "string"
+        ? parsed.masterCaption.slice(0, 2200)
+        : "",
+    hashtags: Array.isArray(parsed.hashtags)
+      ? parsed.hashtags
+          .filter((h): h is string => typeof h === "string")
+          .slice(0, 20)
+      : [],
+    slides: slides.map((_, i) => {
+      const s = (rawSlides[i] ?? {}) as { micro?: unknown; alt?: unknown };
+      return {
+        micro: typeof s.micro === "string" ? s.micro.slice(0, 200) : "",
+        alt: typeof s.alt === "string" ? s.alt.slice(0, 200) : "",
+      };
+    }),
+  };
 }
 
 function buildDirectorsNotes(opts: ImagePromptOpts): string {

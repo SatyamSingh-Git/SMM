@@ -5,6 +5,7 @@ import {
   listPosts,
   getPost,
   cancelPost,
+  restorePost,
   publishNow,
   retryPost,
   updatePost,
@@ -56,17 +57,42 @@ const ChainItem = z
     { message: "Each chain item needs text or media" }
   );
 
-const CreateBody = z.object({
-  accountId: z.string().min(1),
-  platform: Platform,
-  type: PostType,
-  caption: z.string().max(2200).optional(),
-  mediaAssetIds: z.array(z.string()).default([]),
-  assetMetas: z.array(AssetMeta).max(20).optional(),
-  replyChain: z.array(ChainItem).max(20).optional(),
-  igExtras: IgExtras.optional(),
-  scheduledAt: z.string().datetime().nullish(),
-});
+const CreateBody = z
+  .object({
+    accountId: z.string().min(1),
+    platform: Platform,
+    type: PostType,
+    caption: z.string().max(2200).optional(),
+    mediaAssetIds: z.array(z.string()).default([]),
+    assetMetas: z.array(AssetMeta).max(20).optional(),
+    replyChain: z.array(ChainItem).max(20).optional(),
+    igExtras: IgExtras.optional(),
+    scheduledAt: z.string().datetime().nullish(),
+  })
+  // Server-side hard blocks for deterministic Meta rejections — defense in depth
+  // behind the compose UI (the publish retry exists for TRANSIENT failures, not
+  // malformed posts, so these should never reach the queue).
+  .superRefine((v, ctx) => {
+    // Threads caption hard cap is 500 (IG is 2200, already covered by .max).
+    if (v.platform === "threads" && (v.caption?.length ?? 0) > 500) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["caption"],
+        message: "Threads caption must be ≤500 characters",
+      });
+    }
+    // IG carousel needs 2-10 items.
+    if (v.type === "ig_carousel") {
+      const n = v.mediaAssetIds.length;
+      if (n < 2 || n > 10) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["mediaAssetIds"],
+          message: "Carousel needs 2–10 items",
+        });
+      }
+    }
+  });
 
 // PATCH /posts/:id — everything optional. AccountId/platform are immutable.
 const UpdateBody = z.object({
@@ -144,6 +170,20 @@ export async function registerPostRoutes(app: FastifyInstance): Promise<void> {
       const post = await cancelPost(req.params.id);
       if (!post) return reply.code(404).send({ error: "not found" });
       return post;
+    }
+  );
+
+  // Undo a cancel/delete — flips a cancelled post back to draft.
+  app.post<{ Params: { id: string } }>(
+    "/posts/:id/restore",
+    async (req, reply) => {
+      try {
+        const post = await restorePost(req.params.id);
+        if (!post) return reply.code(404).send({ error: "not found" });
+        return post;
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
     }
   );
 

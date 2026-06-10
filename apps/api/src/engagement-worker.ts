@@ -474,6 +474,32 @@ const autoBackfillInterval = setInterval(() => {
 }, AUTO_BACKFILL_MS);
 autoBackfillInterval.unref();
 
+// Draft TTL sweeper — auto-saved drafts that were never touched for 30 days are
+// GC'd so the right-rail drafts list doesn't accumulate abandoned rows. Only
+// drafts (never scheduled/published) with no scheduledAt are eligible. Runs
+// once 2 min after boot, then daily.
+const DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+async function sweepStaleDrafts(): Promise<void> {
+  const cutoff = new Date(Date.now() - DRAFT_TTL_MS);
+  const r = await prisma.post.deleteMany({
+    where: { status: "draft", scheduledAt: null, updatedAt: { lt: cutoff } },
+  });
+  if (r.count > 0) console.log(`[engage] swept ${r.count} stale drafts (>30d)`);
+}
+const draftSweepInitial = setTimeout(() => {
+  sweepStaleDrafts().catch((e) =>
+    console.error("[engage] draft sweep failed:", (e as Error).message)
+  );
+}, 120_000);
+draftSweepInitial.unref();
+const draftSweepInterval = setInterval(() => {
+  sweepStaleDrafts().catch((e) =>
+    console.error("[engage] draft sweep failed:", (e as Error).message)
+  );
+}, ONE_DAY_MS);
+draftSweepInterval.unref();
+
 console.log(
   "[engage] runner ready (Postgres polling, 90s reply / 8min comments / 60s hot-post burst, IST quiet-window aware)"
 );
@@ -491,5 +517,7 @@ process.on("SIGINT", () => {
   clearTimeout(recoveryTimer);
   clearTimeout(autoBackfillInitial);
   clearInterval(autoBackfillInterval);
+  clearTimeout(draftSweepInitial);
+  clearInterval(draftSweepInterval);
   process.exit(0);
 });

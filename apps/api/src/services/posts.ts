@@ -206,6 +206,21 @@ export async function cancelPost(id: string) {
   });
 }
 
+// Undo a cancel — flip a cancelled post back to draft so the user can
+// re-schedule it. Only cancelled posts are restorable (we never resurrect a
+// published/failed row this way).
+export async function restorePost(id: string) {
+  const post = await prisma.post.findUnique({ where: { id } });
+  if (!post) return null;
+  if (post.status !== "cancelled") {
+    throw new Error(`Only cancelled posts can be restored (this is ${post.status})`);
+  }
+  return prisma.post.update({
+    where: { id },
+    data: { status: "draft" },
+  });
+}
+
 /**
  * Re-queue a failed (or any non-published) post for an immediate publish attempt.
  * Clears prior PublishJob rows so the runner's attempt counter resets to a fresh

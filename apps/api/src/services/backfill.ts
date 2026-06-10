@@ -224,6 +224,8 @@ async function upsertBackfilledPost(args: {
       platformUrl: args.platformUrl,
       // scheduledAt = true publish time so heatmap/sorts behave.
       scheduledAt: args.publishedAt,
+      // Real publish timestamp — survives later edits (unlike updatedAt).
+      publishedAt: args.publishedAt,
       ...assetCreate,
     },
     select: { id: true },

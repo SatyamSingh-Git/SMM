@@ -21,6 +21,9 @@ export type Account = {
   platform: Platform;
   platformUserId: string;
   username: string | null;
+  tokenExpiresAt?: string | null;
+  lastRefreshAt?: string | null;
+  lastRefreshError?: string | null;
 };
 
 export type MediaAsset = {
@@ -34,6 +37,16 @@ export type MediaAsset = {
   heightPx?: number | null;
 };
 
+export type IgExtras = {
+  locationId?: string;
+  locationName?: string;
+  collaborators?: string[];
+  thumbOffsetMs?: number;
+  coverUrl?: string;
+  isAiGenerated?: boolean;
+};
+export type UserTag = { username: string; x: number; y: number };
+
 export type Post = {
   id: string;
   accountId: string;
@@ -41,14 +54,22 @@ export type Post = {
   type: PostType;
   caption: string | null;
   scheduledAt: string | null;
+  publishedAt?: string | null;
   status: PostStatus;
   platformPostId: string | null;
   platformUrl: string | null;
   aiGenerated: boolean;
+  igExtrasJson?: IgExtras | null;
+  replyChainJson?: Array<{ text?: string; assetIds?: string[] }> | null;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
-  assets: { position: number; asset: MediaAsset }[];
+  assets: {
+    position: number;
+    altText?: string | null;
+    userTagsJson?: UserTag[] | null;
+    asset: MediaAsset;
+  }[];
 };
 
 // ---- Dashboard ----

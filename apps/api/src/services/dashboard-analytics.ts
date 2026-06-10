@@ -66,7 +66,9 @@ export async function getRecentPostsWithLatestInsight(opts: {
       type: p.type,
       caption: p.caption,
       scheduledAt: p.scheduledAt,
-      publishedAt: p.updatedAt,
+      // Prefer the real publish column; fall back to updatedAt for rows that
+      // predate the column / backfill.
+      publishedAt: p.publishedAt ?? p.updatedAt,
       platformUrl: p.platformUrl,
       thumbnailUrl: p.assets[0]?.asset.publicUrl ?? null,
       engagement,

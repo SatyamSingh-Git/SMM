@@ -79,14 +79,34 @@ export type AccountInfo = {
   platform: "instagram" | "threads";
   platformUserId: string;
   username: string | null;
+  // Token health (surfaced in the topbar so silent refresh failures are visible).
+  tokenExpiresAt: string | null;
+  lastRefreshAt: string | null;
+  lastRefreshError: string | null;
 };
 
 export async function listAccounts(): Promise<AccountInfo[]> {
   const rows = await prisma.account.findMany({
-    select: { id: true, platform: true, platformUserId: true, username: true },
+    select: {
+      id: true,
+      platform: true,
+      platformUserId: true,
+      username: true,
+      tokenExpiresAt: true,
+      lastRefreshAt: true,
+      lastRefreshError: true,
+    },
     orderBy: { platform: "asc" },
   });
-  return rows;
+  return rows.map((r) => ({
+    id: r.id,
+    platform: r.platform,
+    platformUserId: r.platformUserId,
+    username: r.username,
+    tokenExpiresAt: r.tokenExpiresAt ? r.tokenExpiresAt.toISOString() : null,
+    lastRefreshAt: r.lastRefreshAt ? r.lastRefreshAt.toISOString() : null,
+    lastRefreshError: r.lastRefreshError,
+  }));
 }
 
 // Only sets tokenExpiresAt on update if the existing row has no expiry yet.

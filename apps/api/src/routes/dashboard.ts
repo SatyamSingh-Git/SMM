@@ -64,6 +64,22 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
     return getBestPostingSlots({ days: 90, platform: readPlatform(req) });
   });
 
+  // Top share-heavy posts — shares are the strongest reach signal in 2026, so
+  // surfacing the posts people actually SHARE (not just like) is high-signal.
+  // Reuses the recent-posts query and ranks by raw shares.
+  app.get("/dashboard/share-heavy", async (req) => {
+    const posts = await getRecentPostsWithLatestInsight({
+      days: 30,
+      limit: 60,
+      platform: readPlatform(req),
+    });
+    const ranked = posts
+      .filter((p) => (p.shares ?? 0) > 0)
+      .sort((a, b) => (b.shares ?? 0) - (a.shares ?? 0))
+      .slice(0, 6);
+    return { posts: ranked };
+  });
+
   app.get("/dashboard/type-breakdown", async (req) => {
     return { rows: await getTypeBreakdown(30, readPlatform(req)) };
   });

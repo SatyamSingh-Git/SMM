@@ -9,6 +9,7 @@ import {
   RotateCw,
   Send,
   Trash2,
+  Undo2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Post } from "@/lib/types";
@@ -37,12 +38,24 @@ export function PostActions({ post, size = "sm", onEdit }: Props) {
     mutationFn: () => api.retryPost(post.id),
     onSettled: () => qc.invalidateQueries({ queryKey: ["posts"] }),
   });
+  const [undoFor, setUndoFor] = React.useState<string | null>(null);
   const cancel = useMutation({
     mutationFn: () => api.cancelPost(post.id),
+    onSuccess: () => {
+      // Offer an undo for a few seconds (reuses the soft-delete → restore path).
+      setUndoFor(post.id);
+      setTimeout(() => setUndoFor((v) => (v === post.id ? null : v)), 8000);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["posts"] }),
+  });
+  const restore = useMutation({
+    mutationFn: () => api.restorePost(post.id),
+    onSuccess: () => setUndoFor(null),
     onSettled: () => qc.invalidateQueries({ queryKey: ["posts"] }),
   });
 
-  const busy = publishNow.isPending || retry.isPending || cancel.isPending;
+  const busy =
+    publishNow.isPending || retry.isPending || cancel.isPending || restore.isPending;
   const err =
     (publishNow.error as Error | null)?.message ||
     (retry.error as Error | null)?.message ||
@@ -130,6 +143,21 @@ export function PostActions({ post, size = "sm", onEdit }: Props) {
           </button>
         )}
       </div>
+      {undoFor === post.id && (
+        <button
+          type="button"
+          onClick={() => restore.mutate()}
+          disabled={restore.isPending}
+          className="inline-flex items-center gap-1 text-[10px] text-[var(--accent)] hover:underline"
+        >
+          {restore.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Undo2 className="h-3 w-3" />
+          )}
+          Undo
+        </button>
+      )}
       {err && (
         <div className="text-[10px] text-[var(--danger)] max-w-[180px] truncate" title={err}>
           {err}

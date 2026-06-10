@@ -52,6 +52,11 @@ export function PlatformSection({ platform }: Props) {
     queryFn: () => api.dashboardBestTimes(platform),
     refetchInterval: 60 * 60_000,
   });
+  const shareHeavyQ = useQuery({
+    queryKey: ["dashboard", platform, "share-heavy"],
+    queryFn: () => api.dashboardShareHeavy(platform),
+    refetchInterval: 30 * 60_000,
+  });
 
   const isIg = platform === "instagram";
   const Icon = isIg ? Camera : MessageCircle;
@@ -98,8 +103,57 @@ export function PlatformSection({ platform }: Props) {
       <CaptionPatternsCard platform={platform} />
 
       <BestTimesCallout data={bestTimesQ.data} />
+      <ShareHeavyCard posts={shareHeavyQ.data} />
       <PostingHeatmap data={heatmapQ.data} loading={heatmapQ.isLoading} />
     </section>
+  );
+}
+
+function ShareHeavyCard({
+  posts,
+}: {
+  posts?: import("@/lib/types").TopPostRow[];
+}) {
+  if (!posts || posts.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold tracking-tight">
+          Most shared this month
+        </h3>
+        <span className="text-[11px] text-[var(--fg-subtle)]">
+          shares = strongest reach signal
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {posts.map((p) => (
+          <a
+            key={p.id}
+            href={p.platformUrl ?? "#"}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2 hover:border-[var(--accent)] transition-colors"
+          >
+            {p.thumbnailUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={p.thumbnailUrl}
+                alt=""
+                className="h-9 w-9 shrink-0 rounded object-cover"
+              />
+            ) : (
+              <div className="h-9 w-9 shrink-0 rounded bg-[var(--surface)]" />
+            )}
+            <div className="min-w-0 flex-1 text-xs text-fg/90 line-clamp-1">
+              {p.caption || "(no caption)"}
+            </div>
+            <div className="shrink-0 text-xs font-semibold text-[var(--accent)]">
+              {(p.shares ?? 0).toLocaleString()} shares
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }
 

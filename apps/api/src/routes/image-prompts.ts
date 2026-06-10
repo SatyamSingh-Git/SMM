@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
   generateImagePrompts,
+  generateCarouselCompanion,
   getOptionCatalog,
 } from "../services/image-prompts.js";
 import { BRAND_VOICE_VISUAL_FALLBACK } from "../services/ai.js";
@@ -156,6 +157,24 @@ export async function registerImagePromptRoutes(
     try {
       const prompts = await generateImagePrompts(parsed.data);
       return { prompts };
+    } catch (e) {
+      return reply.code(502).send({ error: (e as Error).message });
+    }
+  });
+
+  // POST /ai/image-prompts/carousel-text — given the generated prompts, write
+  // the IG caption + per-slide micro-captions + alt text for the carousel.
+  app.post("/ai/image-prompts/carousel-text", async (req, reply) => {
+    const Body2 = z.object({
+      prompts: z.array(z.string().min(1)).min(1).max(10),
+    });
+    const parsed = Body2.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    try {
+      const companion = await generateCarouselCompanion(parsed.data.prompts);
+      return companion;
     } catch (e) {
       return reply.code(502).send({ error: (e as Error).message });
     }

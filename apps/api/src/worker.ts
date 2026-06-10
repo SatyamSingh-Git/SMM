@@ -259,6 +259,7 @@ async function processOnePost(postId: string): Promise<void> {
       where: { id: postId },
       data: {
         status: "published",
+        publishedAt: new Date(),
         platformPostId,
         platformUrl: platformUrl ?? null,
         lastError: null,
