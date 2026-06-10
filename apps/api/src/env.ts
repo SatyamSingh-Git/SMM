@@ -33,9 +33,10 @@ const Env = z.object({
 
   // DeepSeek (preferred per user note in memory: cheaper than Claude for this).
   DEEPSEEK_API_KEY: z.string().optional(),
-  // DeepSeek handles text-only generations (fresh + enhance modes). Their
-  // /chat endpoint doesn't accept image input, so vision goes via OpenRouter.
-  DEEPSEEK_MODEL: z.string().default("deepseek-chat"),
+  // DeepSeek V4 Flash — fast + cheap variant the user has standardized on for
+  // all AI features (captions, /inspire, image prompts, dashboard insights).
+  // Override via DEEPSEEK_MODEL env var if you want to pin a different model.
+  DEEPSEEK_MODEL: z.string().default("deepseek-v4-flash"),
 
   // OpenRouter is used ONLY for from-image mode (vision). One key, many
   // models; pricing is pay-per-use. Sign up at https://openrouter.ai/keys

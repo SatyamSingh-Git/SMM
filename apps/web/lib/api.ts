@@ -16,6 +16,32 @@ import type {
   MomentumPost,
 } from "./types";
 
+// ---------- Image-Prompt Writer types ----------
+export type ImagePromptInput = {
+  scene: string;
+  personaDescriptor?: string;
+  count?: number;
+  outfit?: string;
+  shotType?: string;
+  cameraQuality?: string;
+  photographer?: string;
+  cameraAngles?: string[];
+  locale?: string;
+  lighting?: string;
+  hairstyles?: string[];
+  defaultPersonality?: boolean;
+};
+export type ImagePromptOptionCatalog = {
+  outfit: Array<{ value: string; label: string }>;
+  shotType: Array<{ value: string; label: string }>;
+  cameraQuality: Array<{ value: string; label: string }>;
+  photographer: Array<{ value: string; label: string }>;
+  cameraAngle: Array<{ value: string; label: string }>;
+  locale: Array<{ value: string; label: string }>;
+  lighting: Array<{ value: string; label: string }>;
+  hairstyle: Array<{ value: string; label: string }>;
+};
+
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4000";
 
@@ -149,6 +175,20 @@ export const api = {
       "/ai/inspire",
       { method: "POST", json: input }
     ),
+  // ----- Image-Prompt Writer: 3 image-gen prompts for one scene -----
+  getImagePromptPersonaDefault: () =>
+    request<{ defaultPersona: string }>("/ai/image-prompts/persona").then(
+      (r) => r.defaultPersona
+    ),
+  getImagePromptOptions: () =>
+    request<{ options: ImagePromptOptionCatalog }>(
+      "/ai/image-prompts/options"
+    ).then((r) => r.options),
+  generateImagePrompts: (input: ImagePromptInput) =>
+    request<{ prompts: string[] }>("/ai/image-prompts", {
+      method: "POST",
+      json: input,
+    }).then((r) => r.prompts),
   updatePost: (
     id: string,
     patch: {

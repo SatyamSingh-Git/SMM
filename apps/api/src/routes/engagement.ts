@@ -87,7 +87,8 @@ export async function registerEngagementRoutes(app: FastifyInstance): Promise<vo
         istNow.getUTCMinutes()
       ).padStart(2, "0")}`,
       fixedQuietWindows: [
-        { start: "00:00", end: "06:00", durationMin: 360, label: "overnight" },
+        // Overnight window crosses midnight: 23:00 IST today → 06:00 IST tomorrow.
+        { start: "23:00", end: "06:00", durationMin: 420, label: "overnight" },
         { start: "11:00", end: "12:00", durationMin: 60, label: "morning break" },
         { start: "14:00", end: "16:00", durationMin: 120, label: "afternoon break" },
       ],

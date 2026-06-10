@@ -11,7 +11,6 @@ import { generateThreadsReply } from "./services/reply-generator.js";
 import { pollForNewComments } from "./services/engagement.js";
 import { learnThreadsStyle } from "./services/style-learning.js";
 import { backfillFromPlatforms } from "./services/backfill.js";
-import { regenerateAllAiCaches } from "./services/dashboard-ai-regen.js";
 import {
   isOverDailyCap,
   avoidQuietWindows,
@@ -419,15 +418,16 @@ styleRefresh.unref();
 
 // Auto-backfill new posts from Meta — initial run 60s after boot, then every
 // 6h. Catches posts the user published directly in the Threads/Instagram
-// apps (without using the SMM composer) so the dashboard stays accurate
-// even when the user never clicks "Sync now". Concurrent runs are coalesced
-// by the single-flight mutex inside backfillFromPlatforms.
+// apps (without using the SMM composer) so the dashboard's KPIs, top-posts,
+// heatmap, and follower trend stay accurate even when the user never clicks
+// "Sync now". Concurrent runs are coalesced by the single-flight mutex
+// inside backfillFromPlatforms.
 //
-// Crucially, when this backfill INGESTS new posts, we ALSO regenerate the
-// AI dashboard caches (Focus this week, Caption patterns, Comment themes).
-// Without that, the dashboard KPIs/top-posts/heatmap auto-update (they read
-// the DB live), but the cached AI insights stay frozen on stale data — which
-// the user saw as "Focus says 'no posts in 7 days' even though I posted 64".
+// IMPORTANT: this auto-backfill DOES NOT regenerate the AI cards (Focus this
+// week, Caption patterns, Comment themes). Those use DeepSeek tokens and are
+// regenerated ONLY when the user clicks "Sync now" — the user's explicit
+// choice to keep AI cost bounded by manual action. The dashboard's live SQL
+// cards still update automatically; the cached AI cards stay until Sync.
 function logBackfill(prefix: string, r: Awaited<ReturnType<typeof backfillFromPlatforms>>): void {
   const errPart = r.errors.length > 0 ? ` · errors: ${r.errors.length}` : "";
   console.log(
@@ -436,30 +436,9 @@ function logBackfill(prefix: string, r: Awaited<ReturnType<typeof backfillFromPl
   for (const e of r.errors) console.log(`${prefix}   ! ${e}`);
 }
 
-async function regenAiAlways(prefix: string): Promise<void> {
-  // ALWAYS regen — the previous "only when new posts" gate missed the case
-  // where posts were ingested by an EARLIER cycle but the AI cache hadn't
-  // been regenerated yet (so the Focus card kept reading a 12+ hour stale
-  // payload). 5 DeepSeek calls × 4 cycles/day = ~20/day. Negligible cost
-  // for keeping the dashboard's AI insights aligned with the live KPIs.
-  try {
-    const ai = await regenerateAllAiCaches();
-    const okCount = ai.filter((a) => a.ok).length;
-    console.log(`${prefix}: AI caches regenerated (${okCount}/${ai.length})`);
-    for (const a of ai.filter((x) => !x.ok)) {
-      console.log(`${prefix}   ! AI ${a.kind} failed: ${a.error}`);
-    }
-  } catch (e) {
-    console.error(`${prefix}: AI regen failed:`, (e as Error).message);
-  }
-}
-
 const autoBackfillInitial = setTimeout(() => {
   backfillFromPlatforms({ daysBack: AUTO_BACKFILL_DAYS })
-    .then(async (r) => {
-      logBackfill("[engage] initial auto-backfill", r);
-      await regenAiAlways("[engage] initial auto-backfill");
-    })
+    .then((r) => logBackfill("[engage] initial auto-backfill", r))
     .catch((e) =>
       console.error("[engage] initial auto-backfill failed:", (e as Error).message)
     );
@@ -468,10 +447,7 @@ autoBackfillInitial.unref();
 
 const autoBackfillInterval = setInterval(() => {
   backfillFromPlatforms({ daysBack: AUTO_BACKFILL_DAYS })
-    .then(async (r) => {
-      logBackfill("[engage] auto-backfill", r);
-      await regenAiAlways("[engage] auto-backfill");
-    })
+    .then((r) => logBackfill("[engage] auto-backfill", r))
     .catch((e) =>
       console.error("[engage] auto-backfill failed:", (e as Error).message)
     );

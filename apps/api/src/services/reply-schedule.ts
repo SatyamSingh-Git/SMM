@@ -22,10 +22,14 @@ import { prisma } from "@smm/db";
 const IST_OFFSET_MIN = 5 * 60 + 30;
 
 // Quiet windows — NO replies during these hours (IST).
+// The overnight window crosses midnight: 23:00 IST today → 06:00 IST tomorrow.
+// Encoded as a single entry with endH = 30 (24 + 6); Date.UTC normalizes the
+// overflow into the next calendar day cleanly, so a single window covers the
+// whole 7-hour overnight sleep without splitting.
 const QUIET_WINDOWS_IST: Array<{ startH: number; endH: number }> = [
-  { startH: 0, endH: 6 },
-  { startH: 11, endH: 12 },
-  { startH: 14, endH: 16 },
+  { startH: 23, endH: 30 },     // 23:00 IST today → 06:00 IST tomorrow (7h overnight)
+  { startH: 11, endH: 12 },     // 11-12 IST (1h late-morning break)
+  { startH: 14, endH: 16 },     // 14-16 IST (2h afternoon break)
 ];
 
 // Active sessions for dynamic sleep windows (in minutes of the IST day).
@@ -38,7 +42,7 @@ const EVENING_SLEEPS_MIN = [30, 30, 45, 45];                         // 2.5h tot
 // don't merge into one long break.
 const MIN_ACTIVE_SEGMENT_MIN = 20;
 
-export const DAILY_REPLY_CAP = 300;
+export const DAILY_REPLY_CAP = 200;
 
 function toIstDate(utcMs: number): Date {
   return new Date(utcMs + IST_OFFSET_MIN * 60_000);

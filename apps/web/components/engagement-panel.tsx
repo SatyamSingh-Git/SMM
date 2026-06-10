@@ -22,7 +22,7 @@ import { api } from "@/lib/api";
 import type { EngagementComment, EngagementStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const DAILY_REPLY_CAP = 300;
+const DAILY_REPLY_CAP = 200;
 
 // Right-rail panel showing incoming Threads comments + what the agent
 // has done (replied / queued / failed) with manual override buttons.
@@ -418,7 +418,8 @@ function SleepScheduleCard() {
     [...d.fixedQuietWindows, ...d.dynamicSleepWindows].some((w) => {
       const s = hmToMinutes(w.start);
       const e = hmToMinutes(w.end);
-      return nowMin >= s && nowMin < e;
+      // Handles cross-midnight windows like 23:00-06:00.
+      return e < s ? nowMin >= s || nowMin < e : nowMin >= s && nowMin < e;
     });
 
   return (
@@ -532,7 +533,10 @@ function WindowChip({
 }) {
   const sMin = hmToMinutes(start);
   const eMin = hmToMinutes(end);
-  const isNow = nowMin >= sMin && nowMin < eMin;
+  // Cross-midnight windows (e.g. 23:00-06:00) need wraparound: "now" is in
+  // the window if it's after the start OR before the end.
+  const isNow =
+    eMin < sMin ? nowMin >= sMin || nowMin < eMin : nowMin >= sMin && nowMin < eMin;
   return (
     <div
       className={cn(
