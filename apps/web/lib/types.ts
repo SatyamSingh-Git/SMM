@@ -62,6 +62,8 @@ export type DashboardKpis = {
   };
   reach7d: number;
   engagementRate: number | null;
+  shareRate7d: number | null;
+  saveRate7d: number | null;
   postsPublished7d: number;
   repliesHandled: {
     total: number;
@@ -69,6 +71,18 @@ export type DashboardKpis = {
     skipped: number;
     failed: number;
   };
+};
+
+export type BestSlot = {
+  dayOfWeek: number; // 0 = Monday
+  hourIst: number; // 0-23 IST
+  avgEngagement: number;
+  samples: number;
+};
+export type BestTimes = {
+  slots: BestSlot[];
+  minSamples: number;
+  totalPosts: number;
 };
 
 export type TopPostRow = {

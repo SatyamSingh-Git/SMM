@@ -101,6 +101,7 @@ Return STRICT JSON:
     temperature: 0.95,
     maxTokens: 1500,
     jsonMode: true,
+    cacheLabel: "inspire",
   });
 
   let parsed: { suggestions?: CaptionSuggestion[] };

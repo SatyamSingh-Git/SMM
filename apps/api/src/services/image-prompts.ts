@@ -623,6 +623,7 @@ Return STRICT JSON:
     temperature: 0.9,
     maxTokens: 2600,
     jsonMode: true,
+    cacheLabel: "image-prompts",
   });
 
   let parsed: { prompts?: unknown };

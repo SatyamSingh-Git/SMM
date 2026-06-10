@@ -31,24 +31,31 @@ const LOOKBACK_DAYS = 7;
 // user posting ~44/week.
 const POST_SCAN_LIMIT = 100;
 
+// --- Hot-post burst window (faster detection on brand-new posts) ---
+// Instagram/Threads reward fast engagement in a post's first ~30 min. The main
+// poller (every 8 min, 7-day window) detects comments within minutes, which —
+// added to the 5-20 min reply jitter — can push a reply just past the 30-min
+// window. The hot poller scans ONLY very-recent posts every 60s so comments on
+// fresh posts are detected within ~1 min, leaving the SAME human-like jitter
+// room to land the reply inside the window. It does NOT speed up replies; it
+// speeds up DETECTION. Cost is tiny: at ~4 posts/day there are usually 0-1
+// posts in a 45-min window, so a hot tick is ~1 listMyPosts + 0-1 fetchReplies.
+const HOT_WINDOW_MS = 45 * 60_000;
+const HOT_SCAN_LIMIT = 25;
+
+// Account fields the scanner needs (kept narrow so both callers can pass a
+// findFirst row without coupling to the full Prisma model).
+type ScanAccount = { username: string | null };
+
 export async function pollForNewComments(): Promise<{
   scanned: number;
   queued: number;
   skipped: number;
 }> {
-  let scanned = 0;
-  let queued = 0;
-  let skipped = 0;
-  // Per-bucket counters for diagnostic visibility — printed at the end.
-  let bucketOurOwn = 0;
-  let bucketEmpty = 0;
-  let bucketHasReplies = 0;
-  let bucketExisting = 0;
-
   const account = await prisma.account.findFirst({
     where: { platform: "threads" },
   });
-  if (!account) return { scanned, queued, skipped };
+  if (!account) return { scanned: 0, queued: 0, skipped: 0 };
 
   const token = decryptToken(account.accessTokenEncrypted);
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86400_000);
@@ -61,8 +68,60 @@ export async function pollForNewComments(): Promise<{
     });
   } catch (e) {
     console.error("[engagement] listMyPosts failed:", (e as Error).message);
-    return { scanned, queued, skipped };
+    return { scanned: 0, queued: 0, skipped: 0 };
   }
+
+  return scanPostsForComments(posts, token, account, "poll");
+}
+
+// Hot-post burst: detect comments on brand-new posts within ~1 min. Same
+// dedup / daily-cap / reply-jitter as the main poll — only the post window and
+// cadence differ. Lists posts from the last HOT_WINDOW_MS and scans their
+// replies. Returns early (no fetchReplies) when there are no fresh posts.
+export async function pollHotPosts(): Promise<{
+  scanned: number;
+  queued: number;
+  skipped: number;
+}> {
+  const account = await prisma.account.findFirst({
+    where: { platform: "threads" },
+  });
+  if (!account) return { scanned: 0, queued: 0, skipped: 0 };
+
+  const token = decryptToken(account.accessTokenEncrypted);
+  const since = new Date(Date.now() - HOT_WINDOW_MS);
+
+  let posts;
+  try {
+    posts = await listMyPosts(account.platformUserId, token, {
+      since,
+      limit: HOT_SCAN_LIMIT,
+    });
+  } catch (e) {
+    console.error("[engagement] hot listMyPosts failed:", (e as Error).message);
+    return { scanned: 0, queued: 0, skipped: 0 };
+  }
+  if (posts.length === 0) return { scanned: 0, queued: 0, skipped: 0 };
+
+  return scanPostsForComments(posts, token, account, "hot");
+}
+
+// Shared scan: dedup + queue new top-level comments across a set of posts.
+// Behavior is identical for both callers — only the input post set differs.
+async function scanPostsForComments(
+  posts: Array<{ id: string; text?: string | null }>,
+  token: string,
+  account: ScanAccount,
+  label: "poll" | "hot"
+): Promise<{ scanned: number; queued: number; skipped: number }> {
+  let scanned = 0;
+  let queued = 0;
+  let skipped = 0;
+  // Per-bucket counters for diagnostic visibility — printed at the end.
+  let bucketOurOwn = 0;
+  let bucketEmpty = 0;
+  let bucketHasReplies = 0;
+  let bucketExisting = 0;
 
   let dumpedShape = false;
   const ourUsername = account.username?.toLowerCase() ?? "";
@@ -209,8 +268,12 @@ export async function pollForNewComments(): Promise<{
     }
   }
 
-  console.log(
-    `[engage] poll: posts=${posts.length} ourReplyPosts=${bucketOurReplyPost} topLevel=${scanned} queued=${queued} skipped=${skipped} | drops: ours=${bucketOurOwn} empty=${bucketEmpty} hasReplies=${bucketHasReplies} existing=${bucketExisting}`
-  );
+  // Hot ticks are frequent and usually no-ops; only log them when they
+  // actually did something, to avoid spamming the logs once a minute.
+  if (label !== "hot" || queued > 0 || skipped > 0) {
+    console.log(
+      `[engage] ${label}: posts=${posts.length} ourReplyPosts=${bucketOurReplyPost} topLevel=${scanned} queued=${queued} skipped=${skipped} | drops: ours=${bucketOurOwn} empty=${bucketEmpty} hasReplies=${bucketHasReplies} existing=${bucketExisting}`
+    );
+  }
   return { scanned, queued, skipped };
 }

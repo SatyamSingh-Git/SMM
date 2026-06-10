@@ -28,9 +28,6 @@ const Env = z.object({
   INSTAGRAM_USER_ID: z.string().optional(),
   INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
 
-  ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
-
   // DeepSeek (preferred per user note in memory: cheaper than Claude for this).
   DEEPSEEK_API_KEY: z.string().optional(),
   // DeepSeek V4 Flash — fast + cheap variant the user has standardized on for

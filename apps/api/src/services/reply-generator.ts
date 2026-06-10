@@ -1,5 +1,6 @@
 import { prisma } from "@smm/db";
 import { env } from "../env.js";
+import { logDeepseekCache } from "./ai.js";
 
 // Reply generator with a SKIP signal. If the model is unsure or the comment
 // doesn't deserve an in-voice reply (creepy, spam, single-emoji, language we
@@ -328,7 +329,16 @@ async function callDeepseek(opts: {
   if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
+    usage?: {
+      prompt_tokens?: number;
+      prompt_cache_hit_tokens?: number;
+      prompt_cache_miss_tokens?: number;
+    };
   };
+  // The reply path is the highest-volume DeepSeek caller (~40/hr ceiling), so
+  // its prompt-cache health is the biggest single lever on the bill. The system
+  // prompt is a stable prefix; if it ever stops cache-hitting, this surfaces it.
+  logDeepseekCache("reply", data.usage);
   return (data.choices?.[0]?.message?.content ?? "").trim();
 }
 

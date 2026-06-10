@@ -25,6 +25,9 @@ export async function deepseekChat(opts: {
   temperature?: number;
   maxTokens?: number;
   jsonMode?: boolean;
+  // Optional label for cache telemetry, e.g. "reply" | "caption" | "image-prompts".
+  // Lets us see WHICH call site is hitting/missing the DeepSeek prefix cache.
+  cacheLabel?: string;
 }): Promise<string> {
   if (!env.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY not configured");
   const res = await fetch(DEEPSEEK_URL, {
@@ -47,10 +50,51 @@ export async function deepseekChat(opts: {
   if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      prompt_cache_hit_tokens?: number;
+      prompt_cache_miss_tokens?: number;
+    };
   };
+  // Prompt-cache telemetry. The DeepSeek prefix cache is the user's #1
+  // recurring-cost lever: a stable system-prompt prefix bills at ~1/50th the
+  // miss price. If a code change accidentally varies the prefix (e.g. injecting
+  // the date at the TOP of a prompt), the hit ratio silently collapses and the
+  // bill multiplies. Logging hit/miss per call site makes that visible
+  // immediately instead of on the next invoice. Greppable prefix: "[deepseek$]".
+  logDeepseekCache(opts.cacheLabel ?? "unlabeled", data.usage);
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error("DeepSeek returned no content");
   return content;
+}
+
+// Exported so reply-generator.ts (which has its own DeepSeek fetch for the
+// short reply path) can emit the same cache telemetry without duplicating it.
+export function logDeepseekCache(
+  label: string,
+  usage:
+    | {
+        prompt_tokens?: number;
+        prompt_cache_hit_tokens?: number;
+        prompt_cache_miss_tokens?: number;
+      }
+    | undefined
+): void {
+  if (!usage) return;
+  const hit = usage.prompt_cache_hit_tokens ?? 0;
+  const miss = usage.prompt_cache_miss_tokens ?? 0;
+  const denom = hit + miss;
+  // Only flag when there's a real prefix to cache (>500 input tokens). Tiny
+  // prompts legitimately have nothing to cache and would create noise.
+  if (denom < 500) return;
+  const hitPct = denom > 0 ? Math.round((hit / denom) * 100) : 0;
+  // A healthy stable-prefix call site sits well above ~50% hit. Sustained low
+  // hit on a large-prefix call (reply / caption / image-prompts) is the alarm.
+  const flag = hitPct < 40 ? " ⚠️ LOW-CACHE" : "";
+  console.log(
+    `[deepseek$] ${label}: cache hit=${hit} miss=${miss} (${hitPct}% of ${denom} prompt tok)${flag}`
+  );
 }
 
 // ---------- OpenRouter (vision describer) ----------
@@ -520,6 +564,7 @@ Return STRICT JSON:
     temperature: 0.95,
     maxTokens: 1500,
     jsonMode: true,
+    cacheLabel: "caption",
   });
 
   let parsed: { suggestions?: CaptionSuggestion[] };

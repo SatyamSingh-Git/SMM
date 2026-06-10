@@ -8,7 +8,7 @@ import { env } from "./env.js";
 import { decryptToken } from "./crypto.js";
 import { publishItem } from "./publishers/threads.js";
 import { generateThreadsReply } from "./services/reply-generator.js";
-import { pollForNewComments } from "./services/engagement.js";
+import { pollForNewComments, pollHotPosts } from "./services/engagement.js";
 import { learnThreadsStyle } from "./services/style-learning.js";
 import { backfillFromPlatforms } from "./services/backfill.js";
 import {
@@ -30,6 +30,12 @@ const REPLY_BATCH_SIZE = 1;
 // the comment poller's steady-state Threads-API budget drops from ~1,200/hr
 // to ~300/hr, well under the 1,500/hr read cap (services/rate-limiter.ts).
 const COMMENT_POLL_MS = 8 * 60_000;
+// Hot-post burst: scan only brand-new posts (last ~45 min) every 60s so
+// comments on fresh posts are DETECTED within ~1 min. The existing 5-20 min
+// reply jitter is unchanged — this just gives that jitter room to land the
+// reply inside the platform's first-30-min engagement-velocity window instead
+// of after it. Cheap: usually 0-1 fresh posts per tick (see pollHotPosts).
+const HOT_POLL_MS = 60_000;
 const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
 // Periodic backfill of new posts from Meta so the dashboard sees content the
 // user published directly via the Threads/Instagram apps (not through SMM's
@@ -386,6 +392,20 @@ const commentPoll = setInterval(() => {
 }, COMMENT_POLL_MS);
 commentPoll.unref();
 
+// Hot-post burst poller — every 60s, scans only the last ~45 min of posts.
+// Guarded by a single-flight flag so a slow Meta call can't stack ticks.
+let hotPollRunning = false;
+const hotPoll = setInterval(() => {
+  if (hotPollRunning) return;
+  hotPollRunning = true;
+  pollHotPosts()
+    .catch((e) => console.error("[engage] hot poll error:", (e as Error).message))
+    .finally(() => {
+      hotPollRunning = false;
+    });
+}, HOT_POLL_MS);
+hotPoll.unref();
+
 // Style learning — on boot if needed + every 12h
 const styleBootstrap = setTimeout(async () => {
   try {
@@ -455,7 +475,7 @@ const autoBackfillInterval = setInterval(() => {
 autoBackfillInterval.unref();
 
 console.log(
-  "[engage] runner ready (Postgres polling, 90s reply / 5min comments, IST quiet-window aware)"
+  "[engage] runner ready (Postgres polling, 90s reply / 8min comments / 60s hot-post burst, IST quiet-window aware)"
 );
 console.log(
   `[engage] dynamic sleep windows today (IST): ${formatDynamicSleepWindowsToday()}`
@@ -465,6 +485,7 @@ process.on("SIGINT", () => {
   clearInterval(replyPoll);
   clearTimeout(initialDelay);
   clearInterval(commentPoll);
+  clearInterval(hotPoll);
   clearTimeout(styleBootstrap);
   clearInterval(styleRefresh);
   clearTimeout(recoveryTimer);

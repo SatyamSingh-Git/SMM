@@ -1,6 +1,9 @@
-# Local Postgres + Redis for dev.
+# Local Postgres for dev.
 # Requires Docker Desktop. If you don't have Docker, see infra/README.md
-# for free-tier cloud alternatives (Supabase + Upstash).
+# for free-tier cloud alternatives (Supabase).
+#
+# NOTE: Redis was removed — the queue moved from BullMQ/Redis to Postgres
+# polling (see engagement-worker.ts). No Redis dependency remains.
 
 services:
   postgres:
@@ -14,14 +17,5 @@ services:
     volumes:
       - smm_pg_data:/var/lib/postgresql/data
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - smm_redis_data:/data
-    command: ["redis-server", "--appendonly", "yes"]
-
 volumes:
   smm_pg_data:
-  smm_redis_data:

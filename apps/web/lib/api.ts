@@ -218,6 +218,11 @@ export const api = {
     request<Post>(`/posts/${id}/publish-now`, { method: "POST" }),
   retryPost: (id: string) =>
     request<Post>(`/posts/${id}/retry`, { method: "POST" }),
+  duplicateAsThreads: (id: string) =>
+    request<{ post: Post; aiRewritten: boolean }>(
+      `/posts/${id}/duplicate-as-threads`,
+      { method: "POST" }
+    ),
   // ----- Stage 2: engagement -----
   listEngagementComments: (params?: { status?: string; limit?: number }) => {
     const q = new URLSearchParams();
@@ -297,6 +302,10 @@ export const api = {
     request<{ heatmap: number[][] }>(
       `/dashboard/heatmap${qsPlatform(platform)}`
     ).then((r) => r.heatmap),
+  dashboardBestTimes: (platform?: Platform) =>
+    request<import("./types").BestTimes>(
+      `/dashboard/best-times${qsPlatform(platform)}`
+    ),
   dashboardTypeBreakdown: (platform?: Platform) =>
     request<{ rows: TypeBreakdownRow[] }>(
       `/dashboard/type-breakdown${qsPlatform(platform)}`

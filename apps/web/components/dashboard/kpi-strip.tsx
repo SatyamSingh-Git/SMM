@@ -49,7 +49,21 @@ export function KpiStrip({ data, loading }: Props) {
           : data
             ? "—"
             : "—",
-      hint: "of reach (likes + comments + saves + shares)",
+      // Share rate is the strongest reach signal in 2026 — surface it (and the
+      // IG-only save rate) right under the headline engagement number.
+      hint:
+        data && (data.shareRate7d != null || data.saveRate7d != null)
+          ? [
+              data.shareRate7d != null
+                ? `shares ${data.shareRate7d.toFixed(2)}%`
+                : null,
+              data.saveRate7d != null
+                ? `saves ${data.saveRate7d.toFixed(2)}%`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") + " of reach"
+          : "of reach (likes + comments + saves + shares)",
     },
     {
       icon: MessageCircle,

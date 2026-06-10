@@ -92,6 +92,11 @@ export type KpiBundle = {
   };
   reach7d: number;
   engagementRate: number | null; // percent
+  // Reach-normalized share + save rates over the last 7d. Shares are the single
+  // strongest reach signal on IG/Threads in 2026 (Mosseri); saves are IG-only.
+  // Null when there isn't enough reach to compute an honest rate.
+  shareRate7d: number | null; // percent of reach that shared
+  saveRate7d: number | null; // percent of reach that saved (IG only)
   postsPublished7d: number;
   repliesHandled: {
     total: number;
@@ -163,12 +168,16 @@ export async function getKpis(opts?: { platform?: Platform }): Promise<KpiBundle
   let reach7d = 0;
   let totalEngagement = 0;
   let totalReachForRate = 0;
+  let totalShares = 0;
+  let totalSaves = 0;
   for (const p of recent) {
     const ins = p.insights[0];
     if (!ins) continue;
     const r = ins.reach ?? ins.impressions ?? ins.views ?? 0;
     reach7d += r;
     totalReachForRate += r;
+    totalShares += ins.shares ?? 0;
+    totalSaves += ins.saves ?? 0;
     totalEngagement +=
       (ins.likes ?? 0) +
       (ins.comments ?? 0) +
@@ -177,6 +186,18 @@ export async function getKpis(opts?: { platform?: Platform }): Promise<KpiBundle
   }
   const engagementRate =
     totalReachForRate > 0 ? (totalEngagement / totalReachForRate) * 100 : null;
+  // Need a meaningful reach denominator before quoting a rate — below this the
+  // percentage is noise. 2000 reach over 7d is a low bar the active account
+  // clears easily, but protects a brand-new/quiet account from junk numbers.
+  const MIN_REACH_FOR_RATE = 2000;
+  const shareRate7d =
+    totalReachForRate >= MIN_REACH_FOR_RATE
+      ? (totalShares / totalReachForRate) * 100
+      : null;
+  const saveRate7d =
+    totalReachForRate >= MIN_REACH_FOR_RATE
+      ? (totalSaves / totalReachForRate) * 100
+      : null;
 
   // Engagement comments — replies handled over last 7d (filtered to the platform
   // we're scoping to, if any).
@@ -197,9 +218,80 @@ export async function getKpis(opts?: { platform?: Platform }): Promise<KpiBundle
     followers: { current: followersNow, delta14d, historyDays },
     reach7d,
     engagementRate,
+    shareRate7d,
+    saveRate7d,
     postsPublished7d: recent.length,
     repliesHandled: r,
   };
+}
+
+// "Best time to post" recommendation. Unlike the raw 7x24 heatmap (which shows
+// averages per cell), this ranks the top slots by average engagement AND
+// requires a minimum sample count per slot so we don't recommend a one-off
+// fluke. At ~29 posts/week the account accumulates real per-slot samples fast,
+// which is exactly why this is worth surfacing (it would be noise at low volume).
+export type BestSlot = {
+  dayOfWeek: number; // 0 = Monday (matches heatmap / FullCalendar)
+  hourIst: number; // 0-23, IST
+  avgEngagement: number;
+  samples: number; // how many posts landed in this slot
+};
+
+export async function getBestPostingSlots(opts?: {
+  days?: number;
+  platform?: Platform;
+  minSamples?: number;
+  topN?: number;
+}): Promise<{ slots: BestSlot[]; minSamples: number; totalPosts: number }> {
+  const days = opts?.days ?? 90;
+  const minSamples = opts?.minSamples ?? 3;
+  const topN = opts?.topN ?? 5;
+  const since = new Date(Date.now() - days * ONE_DAY);
+  const posts = await prisma.post.findMany({
+    where: {
+      status: "published",
+      updatedAt: { gte: since },
+      ...(opts?.platform ? { platform: opts.platform } : {}),
+    },
+    include: { insights: { orderBy: { capturedAt: "desc" }, take: 1 } },
+  });
+
+  const sumEng: number[][] = Array.from({ length: 7 }, () =>
+    Array.from({ length: 24 }, () => 0)
+  );
+  const counts: number[][] = Array.from({ length: 7 }, () =>
+    Array.from({ length: 24 }, () => 0)
+  );
+  let totalPosts = 0;
+  for (const p of posts) {
+    if (!p.scheduledAt) continue;
+    const ins = p.insights[0];
+    if (!ins) continue;
+    const eng =
+      (ins.likes ?? 0) + (ins.comments ?? 0) + (ins.saves ?? 0) + (ins.shares ?? 0);
+    const ist = new Date(new Date(p.scheduledAt).getTime() + (5 * 60 + 30) * 60_000);
+    const dow = (ist.getUTCDay() + 6) % 7;
+    const hour = ist.getUTCHours();
+    sumEng[dow]![hour]! += eng;
+    counts[dow]![hour]! += 1;
+    totalPosts += 1;
+  }
+
+  const slots: BestSlot[] = [];
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      const n = counts[d]![h]!;
+      if (n < minSamples) continue;
+      slots.push({
+        dayOfWeek: d,
+        hourIst: h,
+        avgEngagement: Math.round(sumEng[d]![h]! / n),
+        samples: n,
+      });
+    }
+  }
+  slots.sort((a, b) => b.avgEngagement - a.avgEngagement);
+  return { slots: slots.slice(0, topN), minSamples, totalPosts };
 }
 
 // 7x24 grid of average engagement by (day-of-week, hour-of-day). Used for the

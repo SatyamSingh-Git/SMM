@@ -1,13 +1,25 @@
 "use client";
 
-import { Camera, Eye, Heart, MessageCircle as Msg, Save, Share2 } from "lucide-react";
+import * as React from "react";
+import { useMutation } from "@tanstack/react-query";
+import { Camera, Check, Eye, Heart, Loader2, MessageCircle as Msg, Repeat2, Save, Share2 } from "lucide-react";
 import type { TopPostRow } from "@/lib/types";
+import { api } from "@/lib/api";
 import { PlatformBadge } from "@/components/platform-badge";
 import { cn } from "@/lib/utils";
 
 type Props = { posts?: TopPostRow[]; loading?: boolean };
 
 export function TopPerformers({ posts, loading }: Props) {
+  // Track per-post duplicate state so each card shows its own spinner / ✓.
+  const [doneIds, setDoneIds] = React.useState<Record<string, boolean>>({});
+  const duplicate = useMutation({
+    mutationFn: (id: string) => api.duplicateAsThreads(id),
+    onSuccess: (_data, id) => {
+      setDoneIds((m) => ({ ...m, [id]: true }));
+      setTimeout(() => setDoneIds((m) => ({ ...m, [id]: false })), 2500);
+    },
+  });
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -56,6 +68,32 @@ export function TopPerformers({ posts, loading }: Props) {
                 >
                   {p.engagement.toLocaleString()} eng
                 </div>
+                {/* Duplicate-as-Threads — IG posts only. Stops the card link. */}
+                {p.platform === "instagram" && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!duplicate.isPending) duplicate.mutate(p.id);
+                    }}
+                    disabled={duplicate.isPending}
+                    title="Make a native Threads draft from this post"
+                    className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-black/75 px-2 py-1 text-[10px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/90 disabled:opacity-60"
+                  >
+                    {doneIds[p.id] ? (
+                      <>
+                        <Check className="h-3 w-3" /> Threads draft
+                      </>
+                    ) : duplicate.isPending && duplicate.variables === p.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <>
+                        <Repeat2 className="h-3 w-3" /> Threads
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
               {/* Metrics row */}
               <div className="p-2 space-y-1">

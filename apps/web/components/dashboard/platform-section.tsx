@@ -47,6 +47,11 @@ export function PlatformSection({ platform }: Props) {
     queryFn: () => api.dashboardHeatmap(platform),
     refetchInterval: 30 * 60_000,
   });
+  const bestTimesQ = useQuery({
+    queryKey: ["dashboard", platform, "best-times"],
+    queryFn: () => api.dashboardBestTimes(platform),
+    refetchInterval: 60 * 60_000,
+  });
 
   const isIg = platform === "instagram";
   const Icon = isIg ? Camera : MessageCircle;
@@ -92,7 +97,46 @@ export function PlatformSection({ platform }: Props) {
       {/* What's working in this platform's captions. */}
       <CaptionPatternsCard platform={platform} />
 
+      <BestTimesCallout data={bestTimesQ.data} />
       <PostingHeatmap data={heatmapQ.data} loading={heatmapQ.isLoading} />
     </section>
+  );
+}
+
+const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function fmtHour(h: number): string {
+  const am = h < 12;
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12} ${am ? "AM" : "PM"}`;
+}
+function BestTimesCallout({
+  data,
+}: {
+  data?: import("@/lib/types").BestTimes;
+}) {
+  if (!data || data.slots.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4">
+      <div className="flex items-baseline justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)]">
+          Best times to post · IST
+        </div>
+        <div className="text-[11px] text-[var(--fg-subtle)]">
+          from {data.totalPosts} posts · ≥{data.minSamples}/slot
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {data.slots.map((s) => (
+          <span
+            key={`${s.dayOfWeek}-${s.hourIst}`}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)] bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] text-[var(--accent)]"
+            title={`avg engagement ${s.avgEngagement} across ${s.samples} posts`}
+          >
+            {DOW[s.dayOfWeek]} {fmtHour(s.hourIst)}
+            <span className="text-[var(--fg-subtle)]">~{s.avgEngagement}</span>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

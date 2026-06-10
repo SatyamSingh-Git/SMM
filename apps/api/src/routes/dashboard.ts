@@ -4,6 +4,7 @@ import {
   getKpis,
   getRecentPostsWithLatestInsight,
   getPostingHeatmap,
+  getBestPostingSlots,
   getTypeBreakdown,
   getFollowerTrend,
 } from "../services/dashboard-analytics.js";
@@ -56,6 +57,11 @@ export async function registerDashboardRoutes(app: FastifyInstance): Promise<voi
 
   app.get("/dashboard/heatmap", async (req) => {
     return { heatmap: await getPostingHeatmap(60, readPlatform(req)) };
+  });
+
+  // Best time to post — top slots ranked by avg engagement, min-sample guarded.
+  app.get("/dashboard/best-times", async (req) => {
+    return getBestPostingSlots({ days: 90, platform: readPlatform(req) });
   });
 
   app.get("/dashboard/type-breakdown", async (req) => {

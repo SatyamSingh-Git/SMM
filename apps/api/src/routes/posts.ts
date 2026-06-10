@@ -9,6 +9,7 @@ import {
   retryPost,
   updatePost,
 } from "../services/posts.js";
+import { duplicateAsThreadsDraft } from "../services/duplicate-threads.js";
 
 const Platform = z.enum(["instagram", "threads"]);
 const PostType = z.enum([
@@ -161,6 +162,21 @@ export async function registerPostRoutes(app: FastifyInstance): Promise<void> {
       const post = await retryPost(req.params.id);
       if (!post) return reply.code(404).send({ error: "not found" });
       return post;
+    }
+  );
+
+  // Duplicate any post as a native Threads draft (rewrites caption to the
+  // Threads voice). Creates a SEPARATE draft the user edits + schedules.
+  app.post<{ Params: { id: string } }>(
+    "/posts/:id/duplicate-as-threads",
+    async (req, reply) => {
+      try {
+        const result = await duplicateAsThreadsDraft(req.params.id);
+        if (!result) return reply.code(404).send({ error: "not found" });
+        return result;
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
     }
   );
 }
