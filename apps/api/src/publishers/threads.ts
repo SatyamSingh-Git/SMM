@@ -124,7 +124,25 @@ export type ThreadsItemSpec = {
     altText?: string;
   }>;
   replyToId?: string;
+  // Single topic tag for niche discovery. Meta disallows periods + ampersands
+  // and the leading "#"; we sanitize before sending.
+  topicTag?: string;
 };
+
+// Normalize a user-entered topic tag to what the Threads API accepts:
+// strip a leading "#", remove disallowed chars (periods, ampersands), trim,
+// cap at 50 chars. Returns null if nothing usable remains.
+export function sanitizeTopicTag(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const cleaned = raw
+    .trim()
+    .replace(/^#+/, "")
+    .replace(/[.&]/g, "")
+    .trim()
+    .slice(0, 50)
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
 
 function pickMediaType(spec: ThreadsItemSpec): "TEXT" | "IMAGE" | "VIDEO" | "CAROUSEL" {
   if (spec.carouselItems && spec.carouselItems.length > 0) return "CAROUSEL";
@@ -187,6 +205,10 @@ export async function publishItem(
     };
     if (spec.text) parentParams.text = spec.text;
     if (spec.replyToId) parentParams.reply_to_id = spec.replyToId;
+    {
+      const tag = sanitizeTopicTag(spec.topicTag);
+      if (tag) parentParams.topic_tag = tag;
+    }
 
     const parent = await call<{ id: string }>(
       `/${userId}/threads`,
@@ -212,6 +234,10 @@ export async function publishItem(
   if (spec.videoUrl) params.video_url = spec.videoUrl;
   if (spec.altText) params.alt_text = spec.altText;
   if (spec.replyToId) params.reply_to_id = spec.replyToId;
+  {
+    const tag = sanitizeTopicTag(spec.topicTag);
+    if (tag) params.topic_tag = tag;
+  }
 
   // Threads requires at least text or media.
   if (mediaType === "TEXT" && !spec.text) {

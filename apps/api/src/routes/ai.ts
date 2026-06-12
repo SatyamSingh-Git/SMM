@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { suggestCaptions, rewriteFirstLine } from "../services/ai.js";
+import { suggestCaptions, rewriteFirstLine, suggestTopicTag } from "../services/ai.js";
 
 const VoiceModifier = z.enum([
   "playful",
@@ -79,6 +79,21 @@ export async function registerAiRoutes(app: FastifyInstance): Promise<void> {
     try {
       const hooks = await rewriteFirstLine(parsed.data);
       return { hooks };
+    } catch (e) {
+      return reply.code(502).send({ error: (e as Error).message });
+    }
+  });
+
+  // Suggest Threads topic tags from the caption.
+  app.post("/ai/suggest-topic-tag", async (req, reply) => {
+    const Body = z.object({ caption: z.string().min(1).max(2000) });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.flatten() });
+    }
+    try {
+      const tags = await suggestTopicTag(parsed.data);
+      return { tags };
     } catch (e) {
       return reply.code(502).send({ error: (e as Error).message });
     }

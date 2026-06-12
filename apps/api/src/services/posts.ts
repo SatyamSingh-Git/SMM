@@ -1,4 +1,5 @@
 import { prisma, type Platform, type PostType, type PostStatus } from "@smm/db";
+import { suggestCaptions } from "./ai.js";
 
 export type IgPostExtras = {
   locationId?: string;
@@ -30,6 +31,8 @@ export type CreatePostInput = {
   replyChain?: Array<{ text?: string; assetIds?: string[] }>;
   // IG container-level extras (location/collaborators/reel cover/AI flag).
   igExtras?: IgPostExtras;
+  // Threads-only: single topic tag for niche discovery.
+  topicTag?: string | null;
   // ISO string; if missing => draft. If past => queue immediately.
   scheduledAt?: string | null;
 };
@@ -51,6 +54,7 @@ export async function createPost(input: CreatePostInput) {
       caption: input.caption ?? null,
       scheduledAt,
       status,
+      topicTag: input.topicTag?.trim() ? input.topicTag.trim() : null,
       aiGenerated: input.igExtras?.isAiGenerated ?? false,
       replyChainJson:
         input.replyChain && input.replyChain.length > 0
@@ -152,6 +156,9 @@ export async function updatePost(id: string, input: Partial<CreatePostInput>) {
         scheduledAt,
         status: newStatus,
         lastError: null,
+        ...(input.topicTag !== undefined
+          ? { topicTag: input.topicTag?.trim() ? input.topicTag.trim() : null }
+          : {}),
         ...(input.type ? { type: input.type } : {}),
         ...(input.igExtras !== undefined
           ? {
@@ -204,6 +211,95 @@ export async function cancelPost(id: string) {
     where: { id },
     data: { status: "cancelled" },
   });
+}
+
+// Duplicate a post to the OTHER platform as a draft (IG <-> Threads). Creates a
+// brand-new draft on the opposite platform's account, with the caption adapted
+// to that platform's voice/length by the existing caption AI, the same media
+// re-linked (no re-upload — media URLs are platform-agnostic), and a back-link
+// to the source for analytics. Never publishes; never touches the source.
+export async function duplicateToOtherPlatform(sourceId: string) {
+  const source = await prisma.post.findUnique({
+    where: { id: sourceId },
+    include: { assets: { include: { asset: true }, orderBy: { position: "asc" } } },
+  });
+  if (!source) return null;
+
+  const target: Platform =
+    source.platform === "instagram" ? "threads" : "instagram";
+
+  const account = await prisma.account.findFirst({
+    where: { platform: target },
+  });
+  if (!account) {
+    throw new Error(`No ${target} account connected to duplicate into`);
+  }
+
+  // Seed text: caption, or the first reply-chain segment for chains.
+  let seed = source.caption?.trim() ?? "";
+  if (!seed && Array.isArray(source.replyChainJson)) {
+    const segs = source.replyChainJson as Array<{ text?: string }>;
+    seed = segs.find((s) => s.text?.trim())?.text?.trim() ?? "";
+  }
+
+  const maxChars = target === "threads" ? 500 : 2200;
+
+  // Decide the target type from the media we have.
+  const assetMimes = source.assets.map((a) => a.asset.mimeType);
+  const hasVideoFirst = assetMimes[0]?.startsWith("video/");
+  let targetType: PostType;
+  if (target === "threads") {
+    targetType = "threads_post";
+  } else if (source.assets.length >= 2) {
+    targetType = "ig_carousel";
+  } else if (source.assets.length === 1 && hasVideoFirst) {
+    targetType = "ig_reel";
+  } else {
+    targetType = "ig_feed"; // single image, or none yet (draft — user adds media)
+  }
+
+  // Adapt the caption to the target platform's voice + length. Best-effort: a
+  // DeepSeek hiccup must not block the duplicate (it's just a draft).
+  let caption: string | undefined;
+  if (seed && seed.length >= 10) {
+    try {
+      const out = await suggestCaptions({
+        platform: target,
+        postType: targetType,
+        mode: "enhance",
+        existingCaption: seed,
+        count: 1,
+      });
+      caption = out[0]?.caption?.slice(0, maxChars);
+    } catch {
+      caption = seed.slice(0, maxChars);
+    }
+  } else if (seed) {
+    caption = seed.slice(0, maxChars);
+  }
+
+  const created = await prisma.post.create({
+    data: {
+      accountId: account.id,
+      platform: target,
+      type: targetType,
+      caption: caption ?? null,
+      status: "draft",
+      sourcePostId: source.id,
+      // Re-link the SAME media assets (carry alt text + tags across).
+      assets: {
+        create: source.assets.map((pa) => ({
+          assetId: pa.assetId,
+          position: pa.position,
+          altText: pa.altText,
+          userTagsJson: pa.userTagsJson ?? undefined,
+        })),
+      },
+    },
+    include: { assets: { include: { asset: true } } },
+  });
+
+  return { post: created, targetPlatform: target };
 }
 
 // Undo a cancel — flip a cancelled post back to draft so the user can

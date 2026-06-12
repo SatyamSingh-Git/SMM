@@ -8,6 +8,7 @@ import {
 import {
   planReplyTime,
   isOverDailyCap,
+  istDateKey,
   DAILY_REPLY_CAP,
 } from "./reply-schedule.js";
 
@@ -246,10 +247,35 @@ async function scanPostsForComments(
       }
 
       // Plan the fire time: 5-20 min random delay, then push past any IST
-      // quiet window (00-06, 11-12, 14-16) if applicable. The polling reply
+      // quiet window (23-06, 11-12, 14-16) if applicable. The polling reply
       // runner picks up queued comments once fireAt has passed AND the
       // current wall clock is outside a quiet window.
-      const { fireAtMs } = planReplyTime();
+      const nowMs = Date.now();
+      const { fireAtMs } = planReplyTime(nowMs);
+
+      // SAME-DAY RULE: a comment received on an IST day is only ever replied on
+      // that same IST day. If the planned fire time spills into the next IST day
+      // (e.g. a late-night comment pushed past the 23:00 overnight window), we
+      // drop it rather than reply tomorrow. No "ahead", no "backwards".
+      if (istDateKey(fireAtMs) !== istDateKey(nowMs)) {
+        await prisma.engagementComment.create({
+          data: {
+            platform: "threads",
+            platformCommentId: tlc.id,
+            platformPostId: post.id,
+            postCaption: post.text ?? null,
+            parentPlatformId: post.id,
+            authorUsername: tlc.username ?? tlc.from?.username ?? null,
+            authorPlatformId: tlc.from?.id ?? null,
+            text: tlc.text,
+            status: "skipped",
+            lastError: "outside same-day reply window (would reply next IST day)",
+          },
+        });
+        skipped++;
+        continue;
+      }
+
       await prisma.engagementComment.create({
         data: {
           platform: "threads",

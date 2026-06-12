@@ -6,6 +6,7 @@ import {
   getPost,
   cancelPost,
   restorePost,
+  duplicateToOtherPlatform,
   publishNow,
   retryPost,
   updatePost,
@@ -67,6 +68,7 @@ const CreateBody = z
     assetMetas: z.array(AssetMeta).max(20).optional(),
     replyChain: z.array(ChainItem).max(20).optional(),
     igExtras: IgExtras.optional(),
+    topicTag: z.string().max(50).nullish(),
     scheduledAt: z.string().datetime().nullish(),
   })
   // Server-side hard blocks for deterministic Meta rejections — defense in depth
@@ -102,6 +104,7 @@ const UpdateBody = z.object({
   assetMetas: z.array(AssetMeta).max(20).optional(),
   replyChain: z.array(ChainItem).max(20).nullish(),
   igExtras: IgExtras.nullish(),
+  topicTag: z.string().max(50).nullish(),
   scheduledAt: z.string().datetime().nullish(),
 });
 
@@ -170,6 +173,20 @@ export async function registerPostRoutes(app: FastifyInstance): Promise<void> {
       const post = await cancelPost(req.params.id);
       if (!post) return reply.code(404).send({ error: "not found" });
       return post;
+    }
+  );
+
+  // Duplicate a post to the other platform as a draft (IG <-> Threads).
+  app.post<{ Params: { id: string } }>(
+    "/posts/:id/duplicate",
+    async (req, reply) => {
+      try {
+        const out = await duplicateToOtherPlatform(req.params.id);
+        if (!out) return reply.code(404).send({ error: "not found" });
+        return out;
+      } catch (e) {
+        return reply.code(400).send({ error: (e as Error).message });
+      }
     }
   );
 

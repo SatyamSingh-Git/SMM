@@ -588,6 +588,47 @@ Return STRICT JSON:
   }));
 }
 
+// Suggest Threads topic tags for a post. Topic tags are how Threads routes a
+// post into niche feeds — high-leverage, low-competition discovery. Returns a
+// few short candidate tags (no "#", no periods/ampersands) the user can pick.
+export async function suggestTopicTag(opts: {
+  caption: string;
+}): Promise<string[]> {
+  const seed = opts.caption.trim().slice(0, 600);
+  if (!seed) return [];
+  const userText = `Suggest 5 Threads topic tags for this post by @cute_aisha_vibes (a young Indian fashion/lifestyle creator). A topic tag is a single short niche label (1-3 words) that routes the post to people who follow that topic — like "desi fashion", "soft girl era", "grwm", "mumbai diaries", "ootd".
+
+Rules: NO "#" symbol, NO periods, NO ampersands, each ≤30 chars, lowercase, specific to the post's actual content + her niche.
+
+Post:
+"""${seed.replace(/"""/g, '\\"\\"\\"')}"""
+
+Return STRICT JSON: {"tags":["...","...","...","...","..."]}`;
+
+  const raw = await deepseekChat({
+    messages: [
+      { role: "system", content: BRAND_VOICE },
+      { role: "user", content: userText },
+    ],
+    temperature: 0.8,
+    maxTokens: 200,
+    jsonMode: true,
+    cacheLabel: "topic-tag",
+  });
+  let parsed: { tags?: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = JSON.parse(raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, ""));
+  }
+  const tags = Array.isArray(parsed.tags) ? parsed.tags : [];
+  return tags
+    .filter((t): t is string => typeof t === "string")
+    .map((t) => t.trim().replace(/^#+/, "").replace(/[.&]/g, "").trim().slice(0, 30))
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
 // Rewrite ONLY the first line (the hook) of a caption. The first ~125 chars are
 // what 95% of viewers see before "more"; a weak hook caps reach. Returns 3
 // alternative opening lines in the SAME brand voice (lowercase, mid-thought,

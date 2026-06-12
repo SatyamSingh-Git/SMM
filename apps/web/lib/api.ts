@@ -87,11 +87,21 @@ export const api = {
   getPost: (id: string) => request<Post>(`/posts/${id}`),
   restorePost: (id: string) =>
     request<Post>(`/posts/${id}/restore`, { method: "POST" }),
+  duplicatePost: (id: string) =>
+    request<{ post: Post; targetPlatform: Platform }>(
+      `/posts/${id}/duplicate`,
+      { method: "POST" }
+    ),
   rewriteHook: (input: { platform: Platform; caption: string }) =>
     request<{ hooks: string[] }>("/ai/rewrite-hook", {
       method: "POST",
       json: input,
     }).then((r) => r.hooks),
+  suggestTopicTag: (caption: string) =>
+    request<{ tags: string[] }>("/ai/suggest-topic-tag", {
+      method: "POST",
+      json: { caption },
+    }).then((r) => r.tags),
   carouselCompanion: (prompts: string[]) =>
     request<{
       masterCaption: string;
@@ -141,6 +151,7 @@ export const api = {
       coverUrl?: string;
       isAiGenerated?: boolean;
     };
+    topicTag?: string | null;
     scheduledAt?: string | null;
   }) => request<Post>("/posts", { method: "POST", json: input }),
   searchLocations: (accountId: string, q: string) =>
@@ -235,6 +246,7 @@ export const api = {
         coverUrl?: string;
         isAiGenerated?: boolean;
       } | null;
+      topicTag?: string | null;
       scheduledAt?: string | null;
     }
   ) => request<Post>(`/posts/${id}`, { method: "PATCH", json: patch }),

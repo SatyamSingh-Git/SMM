@@ -129,6 +129,7 @@ async function processOnePost(postId: string): Promise<void> {
       if (post.type === "threads_post") {
         const spec: ThreadsItemSpec = {};
         if (post.caption) spec.text = post.caption;
+        if (post.topicTag) spec.topicTag = post.topicTag;
         if (assetsWithMeta.length === 1) {
           const a = assetsWithMeta[0]!;
           if (a.asset.mimeType.startsWith("video/")) spec.videoUrl = a.asset.publicUrl;
@@ -177,6 +178,8 @@ async function processOnePost(postId: string): Promise<void> {
           }
           return spec;
         });
+        // Topic tag belongs on the root post of the chain.
+        if (post.topicTag && items[0]) items[0].topicTag = post.topicTag;
         const out = await publishChain(post.account.platformUserId, token, items);
         platformPostId = out.ids[0] ?? "";
       } else {

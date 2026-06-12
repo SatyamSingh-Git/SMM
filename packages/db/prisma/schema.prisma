@@ -125,8 +125,16 @@ model Post {
   replyChainJson  Json?
   // IG-only extras (location, collaborators, reel cover, etc). See comment above MediaAsset model.
   igExtrasJson    Json?
+  // Threads-only: single topic tag for niche discovery (Threads API topic_tag).
+  topicTag        String?
   // Last error message if status=failed.
   lastError       String?
+  // Cross-platform lineage: when a post is duplicated to the other platform
+  // (IG <-> Threads), the new draft points back at the original via this FK.
+  // Lets us link analytics ("this Threads post came from that Reel") later.
+  sourcePostId    String?
+  sourcePost      Post?      @relation("PostDerivation", fields: [sourcePostId], references: [id], onDelete: SetNull)
+  derivedPosts    Post[]     @relation("PostDerivation")
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
@@ -135,6 +143,7 @@ model Post {
   insights        PostInsight[]
 
   @@index([accountId, status, scheduledAt])
+  @@index([sourcePostId])
 }
 
 // Many-to-many join: a post can have multiple assets (carousel), with order.

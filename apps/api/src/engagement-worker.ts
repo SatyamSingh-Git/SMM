@@ -14,6 +14,7 @@ import { backfillFromPlatforms } from "./services/backfill.js";
 import {
   isOverDailyCap,
   avoidQuietWindows,
+  istDateKey,
   formatDynamicSleepWindowsToday,
 } from "./services/reply-schedule.js";
 
@@ -102,6 +103,22 @@ async function processOneReply(commentId: string): Promise<void> {
     where: { id: commentId },
   });
   if (!comment) return;
+
+  // SAME-DAY RULE (send-time guard): only reply on the SAME IST day the comment
+  // was received. Catches anything that slipped to a later day — a backlog after
+  // worker downtime, a boot-recovery re-queue, or a manual retry of an old
+  // comment. No "ahead", no "backwards".
+  if (istDateKey(Date.now()) !== istDateKey(comment.receivedAt.getTime())) {
+    await prisma.engagementComment.update({
+      where: { id: commentId },
+      data: {
+        status: "skipped",
+        lastError: "outside same-day reply window (received on an earlier IST day)",
+      },
+    });
+    console.log(`[engage] ⏭️ ${commentId} skipped (not same IST day)`);
+    return;
+  }
 
   try {
     // No time-based filtering: the agent replies to any queued comment

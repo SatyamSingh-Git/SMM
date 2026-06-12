@@ -61,6 +61,7 @@ export type Post = {
   aiGenerated: boolean;
   igExtrasJson?: IgExtras | null;
   replyChainJson?: Array<{ text?: string; assetIds?: string[] }> | null;
+  topicTag?: string | null;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;

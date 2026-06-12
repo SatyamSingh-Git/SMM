@@ -91,6 +91,8 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
   const [chainUploadingIdx, setChainUploadingIdx] = React.useState<number | null>(null);
   const [scheduledAt, setScheduledAt] = React.useState<string>("");
   const [aiOpen, setAiOpen] = React.useState(false);
+  // Threads-only: single topic tag for niche discovery.
+  const [topicTag, setTopicTag] = React.useState("");
 
   // IG-only extras
   const [location, setLocation] = React.useState<{ id: string; name: string } | null>(null);
@@ -173,6 +175,7 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
           !!ig?.coverUrl ||
           !!ig?.thumbOffsetMs
       );
+      setTopicTag(editingPost.topicTag ?? "");
       setAssetEditingId(null);
       return;
     }
@@ -188,6 +191,7 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
     setCoverUrl("");
     setAiLabel(false);
     setIgDetailsOpen(false);
+    setTopicTag("");
     setAssetEditingId(null);
   }, [open, defaultDate, editingPost]);
 
@@ -363,6 +367,8 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
           : undefined,
         replyChain: replyChainPayload,
         igExtras: igExtras && Object.keys(igExtras).length > 0 ? igExtras : undefined,
+        topicTag:
+          platform === "threads" && topicTag.trim() ? topicTag.trim() : null,
         scheduledAt: isoScheduledAt,
       };
 
@@ -375,6 +381,7 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
           assetMetas: payload.assetMetas,
           replyChain: payload.replyChain ?? null,
           igExtras: payload.igExtras ?? null,
+          topicTag: payload.topicTag,
           scheduledAt: isoScheduledAt,
         });
       }
@@ -395,6 +402,13 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
     () => (cfg.captionMax > 0 ? checkHook(caption, platform, type) : []),
     [caption, platform, type, cfg.captionMax]
   );
+
+  // Topic-tag suggestions (Threads niche discovery). Click-only DeepSeek call.
+  const [tagOptions, setTagOptions] = React.useState<string[] | null>(null);
+  const suggestTags = useMutation({
+    mutationFn: () => api.suggestTopicTag(caption.trim() || topicTag.trim()),
+    onSuccess: (tags) => setTagOptions(tags),
+  });
 
   // "Rewrite hook" — the only thing here that hits DeepSeek, and only on click.
   const [hookOptions, setHookOptions] = React.useState<string[] | null>(null);
@@ -800,6 +814,75 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
                       </label>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Topic tag — Threads only (niche discovery) */}
+              {platform === "threads" && (
+                <div>
+                  <label className="text-xs font-medium text-[var(--fg-muted)]">
+                    Topic tag{" "}
+                    <span className="text-[var(--fg-subtle)]">
+                      (Threads — routes you into a niche feed)
+                    </span>
+                  </label>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--fg-subtle)]">
+                        #
+                      </span>
+                      <Input
+                        value={topicTag}
+                        onChange={(e) =>
+                          setTopicTag(
+                            e.target.value.replace(/^#+/, "").replace(/[.&]/g, "")
+                          )
+                        }
+                        placeholder="e.g. desi fashion, soft girl era, grwm"
+                        maxLength={50}
+                        className="pl-6"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      size="sm"
+                      onClick={() => suggestTags.mutate()}
+                      disabled={suggestTags.isPending || !caption.trim()}
+                      title={
+                        caption.trim()
+                          ? "Suggest topic tags from your caption"
+                          : "Write a caption first"
+                      }
+                    >
+                      {suggestTags.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      Suggest
+                    </Button>
+                  </div>
+                  {tagOptions && tagOptions.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {tagOptions.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            setTopicTag(t);
+                            setTagOptions(null);
+                          }}
+                          className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] text-[var(--fg-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                        >
+                          #{t}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-1 text-[10px] text-[var(--fg-subtle)]">
+                    One tag per post. No periods or ampersands.
+                  </div>
                 </div>
               )}
 

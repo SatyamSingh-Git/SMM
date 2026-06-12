@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Loader2,
   Pencil,
+  Repeat2,
   RotateCw,
   Send,
   Trash2,
@@ -53,9 +54,23 @@ export function PostActions({ post, size = "sm", onEdit }: Props) {
     onSuccess: () => setUndoFor(null),
     onSettled: () => qc.invalidateQueries({ queryKey: ["posts"] }),
   });
+  const [dupMsg, setDupMsg] = React.useState<string | null>(null);
+  const duplicate = useMutation({
+    mutationFn: () => api.duplicatePost(post.id),
+    onSuccess: (out) => {
+      setDupMsg(`→ ${out.targetPlatform} draft created`);
+      setTimeout(() => setDupMsg(null), 6000);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ["posts"] }),
+  });
+  const otherPlatform = post.platform === "instagram" ? "Threads" : "Instagram";
 
   const busy =
-    publishNow.isPending || retry.isPending || cancel.isPending || restore.isPending;
+    publishNow.isPending ||
+    retry.isPending ||
+    cancel.isPending ||
+    restore.isPending ||
+    duplicate.isPending;
   const err =
     (publishNow.error as Error | null)?.message ||
     (retry.error as Error | null)?.message ||
@@ -88,6 +103,20 @@ export function PostActions({ post, size = "sm", onEdit }: Props) {
             <Pencil className={iconCls(size)} />
           </button>
         )}
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => duplicate.mutate()}
+          title={`Duplicate to ${otherPlatform} (new draft)`}
+          className={iconBtn(size)}
+        >
+          {duplicate.isPending ? (
+            <Loader2 className={cn(iconCls(size), "animate-spin")} />
+          ) : (
+            <Repeat2 className={iconCls(size)} />
+          )}
+        </button>
 
         {(post.status === "draft" || post.status === "queued") && (
           <button
@@ -157,6 +186,9 @@ export function PostActions({ post, size = "sm", onEdit }: Props) {
           )}
           Undo
         </button>
+      )}
+      {dupMsg && (
+        <div className="text-[10px] text-[var(--accent)]">{dupMsg}</div>
       )}
       {err && (
         <div className="text-[10px] text-[var(--danger)] max-w-[180px] truncate" title={err}>
