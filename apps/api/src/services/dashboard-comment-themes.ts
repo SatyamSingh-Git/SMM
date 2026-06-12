@@ -1,5 +1,5 @@
 import { prisma } from "@smm/db";
-import { env } from "../env.js";
+import { getConfig } from "./runtime-config.js";
 import { writeCached, type CachedAiPayload } from "./dashboard-cache.js";
 import { parseLooseJson } from "./llm-json.js";
 
@@ -57,7 +57,7 @@ Rules:
 - JSON only.`;
 
 export async function generateCommentThemes(): Promise<CommentThemesPayload> {
-  if (!env.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY not configured");
+  if (!getConfig().deepseekApiKey) throw new Error("DEEPSEEK_API_KEY not configured");
 
   // Most-recent ~300 non-spam-status comments — caps token cost at ~4-5K input.
   const rows = await prisma.engagementComment.findMany({
@@ -92,10 +92,10 @@ export async function generateCommentThemes(): Promise<CommentThemesPayload> {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
+        authorization: `Bearer ${getConfig().deepseekApiKey}`,
       },
       body: JSON.stringify({
-        model: env.DEEPSEEK_MODEL,
+        model: getConfig().deepseekModel,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: userMsg },

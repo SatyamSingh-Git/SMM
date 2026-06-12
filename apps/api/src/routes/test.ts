@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { env } from "../env.js";
+import { getConfig } from "../services/runtime-config.js";
 import {
   publishText as threadsPublishText,
   getMe as threadsGetMe,
@@ -27,7 +28,7 @@ const InstagramPostBody = z.object({
 export async function registerTestRoutes(app: FastifyInstance): Promise<void> {
   // GET /test/whoami — confirms both tokens are valid + returns user info.
   app.get("/test/whoami", async (_req, reply) => {
-    if (env.KILL_SWITCH) return reply.code(503).send({ error: "kill switch on" });
+    if (getConfig().killSwitch) return reply.code(503).send({ error: "kill switch on" });
     const out: Record<string, unknown> = {};
     if (env.THREADS_ACCESS_TOKEN) {
       try {
@@ -48,7 +49,7 @@ export async function registerTestRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /test/threads — publish a text-only Thread.
   app.post("/test/threads", async (req, reply) => {
-    if (env.KILL_SWITCH) return reply.code(503).send({ error: "kill switch on" });
+    if (getConfig().killSwitch) return reply.code(503).send({ error: "kill switch on" });
     const parsed = ThreadsPostBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });
@@ -71,7 +72,7 @@ export async function registerTestRoutes(app: FastifyInstance): Promise<void> {
   // POST /test/instagram — publish a single image post.
   // imageUrl must be a public HTTPS JPEG.
   app.post("/test/instagram", async (req, reply) => {
-    if (env.KILL_SWITCH) return reply.code(503).send({ error: "kill switch on" });
+    if (getConfig().killSwitch) return reply.code(503).send({ error: "kill switch on" });
     const parsed = InstagramPostBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: parsed.error.flatten() });

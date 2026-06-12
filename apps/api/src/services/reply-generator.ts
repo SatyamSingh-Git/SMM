@@ -1,6 +1,6 @@
 import { prisma } from "@smm/db";
-import { env } from "../env.js";
 import { logDeepseekCache } from "./ai.js";
+import { getConfig } from "./runtime-config.js";
 
 // Reply generator with a SKIP signal. If the model is unsure or the comment
 // doesn't deserve an in-voice reply (creepy, spam, single-emoji, language we
@@ -218,7 +218,7 @@ export async function generateThreadsReply(opts: {
   authorUsername: string | null;
   commentText: string;
 }): Promise<ReplyDecision> {
-  if (!env.DEEPSEEK_API_KEY) {
+  if (!getConfig().deepseekApiKey) {
     throw new Error("DEEPSEEK_API_KEY not configured");
   }
 
@@ -309,10 +309,10 @@ async function callDeepseek(opts: {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
+      authorization: `Bearer ${getConfig().deepseekApiKey}`,
     },
     body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL,
+      model: getConfig().deepseekModel,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: opts.userMsg },

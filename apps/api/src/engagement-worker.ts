@@ -13,10 +13,12 @@ import { learnThreadsStyle } from "./services/style-learning.js";
 import { backfillFromPlatforms } from "./services/backfill.js";
 import {
   isOverDailyCap,
+  isOverPerPostCap,
   avoidQuietWindows,
   istDateKey,
   formatDynamicSleepWindowsToday,
 } from "./services/reply-schedule.js";
+import { getConfig } from "./services/runtime-config.js";
 
 // Reply runner cadence. We deliberately go slower than Meta's published 1000
 // replies/24h cap — what matters for anti-spam is the BURST rate, not the
@@ -52,6 +54,10 @@ let replyProcessing = false;
 // --- Reply runner ---
 
 async function processDueReplies(): Promise<void> {
+  // Live auto-reply toggle (Settings). Off → don't fire any replies this tick.
+  // The worker stays loaded; env ENGAGEMENT_ENABLED is still the hard boot gate.
+  if (!getConfig().autoReplyEnabled) return;
+
   // Recover stuck "replying" comments (crashed mid-flight, >15 min stale).
   await prisma.engagementComment.updateMany({
     where: {
@@ -89,7 +95,7 @@ async function processDueReplies(): Promise<void> {
 }
 
 async function processOneReply(commentId: string): Promise<void> {
-  if (env.KILL_SWITCH) throw new Error("KILL_SWITCH on; refusing to reply");
+  if (getConfig().killSwitch) throw new Error("KILL_SWITCH on; refusing to reply");
 
   // Atomic claim: flip queued -> replying in a single conditional UPDATE so a
   // concurrent tick (or a second machine during a deploy) can't double-reply.
@@ -131,6 +137,16 @@ async function processOneReply(commentId: string): Promise<void> {
         data: { status: "skipped", lastError: "daily cap reached at send time" },
       });
       console.log(`[engage] ⏭️ ${commentId} skipped (cap)`);
+      return;
+    }
+
+    // Per-post cap re-check at send time (mirrors the daily-cap double-check).
+    if (comment.platformPostId && (await isOverPerPostCap(comment.platformPostId))) {
+      await prisma.engagementComment.update({
+        where: { id: commentId },
+        data: { status: "skipped", lastError: "per-post cap reached at send time" },
+      });
+      console.log(`[engage] ⏭️ ${commentId} skipped (per-post cap)`);
       return;
     }
 

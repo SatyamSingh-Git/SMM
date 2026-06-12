@@ -22,7 +22,7 @@ import { api } from "@/lib/api";
 import type { EngagementComment, EngagementStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const DAILY_REPLY_CAP = 200;
+const DEFAULT_DAILY_REPLY_CAP = 200;
 
 // Right-rail panel showing incoming Threads comments + what the agent
 // has done (replied / queued / failed) with manual override buttons.
@@ -91,9 +91,12 @@ export function EngagementPanel() {
         />
         <StatTile
           label="Replies today"
-          value={`${statsQ.data?.repliesToday ?? 0}/${DAILY_REPLY_CAP}`}
+          value={`${statsQ.data?.repliesToday ?? 0}/${statsQ.data?.dailyCap ?? DEFAULT_DAILY_REPLY_CAP}`}
           hint="hard daily cap"
-          warn={(statsQ.data?.repliesToday ?? 0) >= DAILY_REPLY_CAP}
+          warn={
+            (statsQ.data?.repliesToday ?? 0) >=
+            (statsQ.data?.dailyCap ?? DEFAULT_DAILY_REPLY_CAP)
+          }
         />
       </div>
 

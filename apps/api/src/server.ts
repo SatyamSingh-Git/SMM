@@ -13,7 +13,9 @@ import { registerImagePromptRoutes } from "./routes/image-prompts.js";
 import { registerLocationRoutes } from "./routes/locations.js";
 import { registerEngagementRoutes } from "./routes/engagement.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
+import { registerSettingsRoutes } from "./routes/settings.js";
 import { ensureAccountsFromEnv } from "./services/accounts.js";
+import { startRuntimeConfig } from "./services/runtime-config.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -36,6 +38,10 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerLocationRoutes(app);
   await registerEngagementRoutes(app);
   await registerDashboardRoutes(app);
+  await registerSettingsRoutes(app);
+
+  // Prime the runtime-config cache (idempotent; also self-primes on import).
+  startRuntimeConfig();
 
   // Seed/refresh accounts from env tokens on boot. Non-fatal if it fails
   // (e.g. token expired) — the API still serves other endpoints.

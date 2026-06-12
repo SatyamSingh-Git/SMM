@@ -37,6 +37,42 @@ export type MediaAsset = {
   heightPx?: number | null;
 };
 
+export type AppSettingsView = {
+  dailyReplyCap: number;
+  perPostReplyCap: number;
+  morningSleepCount: number;
+  morningSleepMin: number;
+  eveningSleepCount: number;
+  eveningSleepMin: number;
+  morningBand: string;
+  eveningBand: string;
+  deepseekModel: string;
+  deepseekModelEffective: string;
+  visionModel: string;
+  visionModelEffective: string;
+  deepseekApiKeyConfigured: boolean;
+  deepseekApiKeyLast4: string | null;
+  openrouterApiKeyConfigured: boolean;
+  openrouterApiKeyLast4: string | null;
+  killSwitch: boolean;
+  autoReplyEnabled: boolean;
+};
+
+export type AppSettingsPatch = {
+  dailyReplyCap?: number;
+  perPostReplyCap?: number;
+  morningSleepCount?: number;
+  morningSleepMin?: number;
+  eveningSleepCount?: number;
+  eveningSleepMin?: number;
+  deepseekModel?: string;
+  visionModel?: string;
+  deepseekApiKey?: string;
+  openrouterApiKey?: string;
+  killSwitch?: boolean;
+  autoReplyEnabled?: boolean;
+};
+
 export type IgExtras = {
   locationId?: string;
   locationName?: string;

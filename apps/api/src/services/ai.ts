@@ -1,4 +1,5 @@
 import { env } from "../env.js";
+import { getConfig } from "./runtime-config.js";
 
 // Two providers, two specialized jobs:
 //   - OpenRouter / Qwen3-VL  -> VISION ONLY. Looks at an image and produces a
@@ -29,15 +30,16 @@ export async function deepseekChat(opts: {
   // Lets us see WHICH call site is hitting/missing the DeepSeek prefix cache.
   cacheLabel?: string;
 }): Promise<string> {
-  if (!env.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY not configured");
+  const cfg = getConfig();
+  if (!cfg.deepseekApiKey) throw new Error("DEEPSEEK_API_KEY not configured");
   const res = await fetch(DEEPSEEK_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
+      authorization: `Bearer ${cfg.deepseekApiKey}`,
     },
     body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL,
+      model: cfg.deepseekModel,
       messages: opts.messages,
       temperature: opts.temperature ?? 0.9,
       max_tokens: opts.maxTokens ?? 900,
@@ -113,13 +115,14 @@ async function openrouterChat(opts: {
   temperature?: number;
   maxTokens?: number;
 }): Promise<string> {
-  if (!env.OPENROUTER_API_KEY)
+  const openrouterApiKey = getConfig().openrouterApiKey;
+  if (!openrouterApiKey)
     throw new Error("OPENROUTER_API_KEY not configured");
   const res = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+      authorization: `Bearer ${openrouterApiKey}`,
       "HTTP-Referer": env.PUBLIC_BASE_URL,
       "X-Title": "SMM Caption Assist",
     },
@@ -145,7 +148,7 @@ async function openrouterChat(opts: {
  */
 export async function describeImage(imageUrl: string): Promise<string> {
   return openrouterChat({
-    model: env.OPENROUTER_VISION_MODEL,
+    model: getConfig().visionModel,
     messages: [
       {
         role: "user",
@@ -507,7 +510,7 @@ export async function suggestCaptions(opts: SuggestOpts): Promise<CaptionSuggest
 
   // Step 1: vision describe (only if from-image + we have OpenRouter + an image).
   let imageDescription: string | null = null;
-  if (opts.mode === "from-image" && opts.imageUrl && env.OPENROUTER_API_KEY) {
+  if (opts.mode === "from-image" && opts.imageUrl && getConfig().openrouterApiKey) {
     try {
       imageDescription = await describeImage(opts.imageUrl);
     } catch (e) {

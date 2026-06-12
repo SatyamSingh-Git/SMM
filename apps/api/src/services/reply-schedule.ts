@@ -18,6 +18,7 @@
 // IST is UTC+5:30 fixed (no DST). All math goes through that offset.
 
 import { prisma } from "@smm/db";
+import { getConfig } from "./runtime-config.js";
 
 const IST_OFFSET_MIN = 5 * 60 + 30;
 
@@ -32,17 +33,10 @@ const QUIET_WINDOWS_IST: Array<{ startH: number; endH: number }> = [
   { startH: 14, endH: 16 },     // 14-16 IST (2h afternoon break)
 ];
 
-// Active sessions for dynamic sleep windows (in minutes of the IST day).
-const MORNING_SESSION = { startMin: 6 * 60, endMin: 11 * 60 };       // 06:00 - 11:00
-const EVENING_SESSION = { startMin: 16 * 60, endMin: 24 * 60 };      // 16:00 - 24:00
-// Sleep window durations (minutes) the PRNG places randomly inside each session.
-const MORNING_SLEEPS_MIN = [30, 30];                                 // 1.0h total
-const EVENING_SLEEPS_MIN = [30, 30, 45, 45];                         // 2.5h total
-// Minimum active time between sleeps (and at session edges) so two sleeps
-// don't merge into one long break.
+// Session bounds + sleep-window counts/durations now come from runtime config
+// (getConfig().morning / .evening). Minimum active time between sleeps (and at
+// session edges) so two sleeps don't merge into one long break stays fixed.
 const MIN_ACTIVE_SEGMENT_MIN = 20;
-
-export const DAILY_REPLY_CAP = 200;
 
 function toIstDate(utcMs: number): Date {
   return new Date(utcMs + IST_OFFSET_MIN * 60_000);
@@ -167,23 +161,49 @@ function pickSleepWindowsInSession(
   return windows;
 }
 
+// Memoize each day's computed windows so a mid-day config change does NOT shift
+// an already-active sleep schedule — today stays as first computed; new config
+// naturally applies tomorrow (a new dateKey). Bounded to a few recent days.
+const windowMemo = new Map<string, Array<{ startMin: number; endMin: number }>>();
+
 /**
- * Returns the (deterministic) dynamic sleep windows in minutes-of-IST-day for
- * the given IST date key (e.g. "2026-05-30"). Same date → same windows, always.
- * Different date → different windows.
+ * Returns the dynamic sleep windows in minutes-of-IST-day for the given IST date
+ * key (e.g. "2026-05-30"). Deterministic given (date + current config), and
+ * memoized per day so it's stable within a day even if config changes.
  */
 export function getDynamicSleepWindowsForDay(
   dateKey: string
 ): Array<{ startMin: number; endMin: number }> {
-  // Per-session RNG seeds (instead of a shared rng walked in fixed order).
-  // This makes the evening windows independent of whether morning happened
-  // to be feasible — so if someone tweaks MORNING_SLEEPS_MIN to be too large
-  // for the session in the future, the evening windows don't silently shift.
+  const memoed = windowMemo.get(dateKey);
+  if (memoed) return memoed;
+
+  const cfg = getConfig();
+  // Per-session RNG seeds (instead of a shared rng walked in fixed order) so the
+  // evening windows are independent of whether morning happened to be feasible.
   const morningRng = mulberry32(hashSeed(dateKey + ":morning"));
   const eveningRng = mulberry32(hashSeed(dateKey + ":evening"));
-  const morning = pickSleepWindowsInSession(MORNING_SESSION, MORNING_SLEEPS_MIN, morningRng);
-  const evening = pickSleepWindowsInSession(EVENING_SESSION, EVENING_SLEEPS_MIN, eveningRng);
-  return [...morning, ...evening];
+  const morning = pickSleepWindowsInSession(
+    { startMin: cfg.morning.startMin, endMin: cfg.morning.endMin },
+    cfg.morning.sleeps,
+    morningRng
+  );
+  const evening = pickSleepWindowsInSession(
+    { startMin: cfg.evening.startMin, endMin: cfg.evening.endMin },
+    cfg.evening.sleeps,
+    eveningRng
+  );
+  const windows = [...morning, ...evening];
+
+  windowMemo.set(dateKey, windows);
+  // FIFO eviction of OLD days only — never evict a day we're still in. Only
+  // ~4 day keys are ever live (yesterday..day-after, from avoidQuietWindows'
+  // -1..+2 offset scan), so today is never dropped mid-day. This is what makes
+  // a mid-day config edit unable to reshuffle the current day's frozen schedule.
+  if (windowMemo.size > 6) {
+    const oldest = windowMemo.keys().next().value;
+    if (oldest !== undefined) windowMemo.delete(oldest);
+  }
+  return windows;
 }
 
 /** Pretty-print today's dynamic sleep windows as "HH:MM-HH:MM, ..." (IST). */
@@ -303,5 +323,25 @@ export async function todaysReplyCount(): Promise<number> {
 
 export async function isOverDailyCap(): Promise<boolean> {
   const n = await todaysReplyCount();
-  return n >= DAILY_REPLY_CAP;
+  return n >= getConfig().dailyReplyCap;
+}
+
+/**
+ * Count committed replies for ONE post today (IST). Same semantics as
+ * todaysReplyCount but scoped to a single platformPostId.
+ */
+export async function postReplyCountToday(platformPostId: string): Promise<number> {
+  const dayStart = new Date(istDayStartUtcMs(Date.now()));
+  return prisma.engagementComment.count({
+    where: {
+      platformPostId,
+      receivedAt: { gte: dayStart },
+      status: { in: ["queued", "replying", "replied"] },
+    },
+  });
+}
+
+export async function isOverPerPostCap(platformPostId: string): Promise<boolean> {
+  const n = await postReplyCountToday(platformPostId);
+  return n >= getConfig().perPostReplyCap;
 }

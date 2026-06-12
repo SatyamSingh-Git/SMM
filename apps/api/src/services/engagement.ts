@@ -8,9 +8,10 @@ import {
 import {
   planReplyTime,
   isOverDailyCap,
+  isOverPerPostCap,
   istDateKey,
-  DAILY_REPLY_CAP,
 } from "./reply-schedule.js";
+import { getConfig } from "./runtime-config.js";
 
 // Polls Threads for new top-level comments on our recent posts. Uses Meta's
 // `/{post_id}/replies` endpoint, which returns ONLY direct replies to the post
@@ -224,9 +225,9 @@ async function scanPostsForComments(
         continue;
       }
 
-      // Hard daily cap. If we've already committed to 300 replies today
-      // (queued + replying + replied), record this comment as skipped so
-      // the user sees it in the UI and can choose to reply manually.
+      // Hard daily cap. If we've already committed to the configured number of
+      // replies today (queued + replying + replied), record this comment as
+      // skipped so the user sees it in the UI and can choose to reply manually.
       if (await isOverDailyCap()) {
         await prisma.engagementComment.create({
           data: {
@@ -239,7 +240,28 @@ async function scanPostsForComments(
             authorPlatformId: tlc.from?.id ?? null,
             text: tlc.text,
             status: "skipped",
-            lastError: `daily cap of ${DAILY_REPLY_CAP} reached`,
+            lastError: `daily cap of ${getConfig().dailyReplyCap} reached`,
+          },
+        });
+        skipped++;
+        continue;
+      }
+
+      // Per-post cap. Each post gets at most N replies per IST day; past that we
+      // skip further comments on that post (it stays visible for manual reply).
+      if (await isOverPerPostCap(post.id)) {
+        await prisma.engagementComment.create({
+          data: {
+            platform: "threads",
+            platformCommentId: tlc.id,
+            platformPostId: post.id,
+            postCaption: post.text ?? null,
+            parentPlatformId: post.id,
+            authorUsername: tlc.username ?? tlc.from?.username ?? null,
+            authorPlatformId: tlc.from?.id ?? null,
+            text: tlc.text,
+            status: "skipped",
+            lastError: `per-post cap of ${getConfig().perPostReplyCap}/day reached`,
           },
         });
         skipped++;

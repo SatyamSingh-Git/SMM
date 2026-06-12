@@ -19,6 +19,7 @@ import {
 } from "./publishers/instagram.js";
 import { checkAndConsume, type LimiterKind } from "./services/rate-limiter.js";
 import { startTokenRefreshLoop } from "./services/token-refresh.js";
+import { getConfig } from "./services/runtime-config.js";
 
 const POLL_MS = 30_000;
 const MAX_ATTEMPTS = 3;
@@ -63,7 +64,7 @@ async function processDuePosts(): Promise<void> {
 }
 
 async function processOnePost(postId: string): Promise<void> {
-  if (env.KILL_SWITCH) {
+  if (getConfig().killSwitch) {
     console.log("[publish] KILL_SWITCH on, skipping", postId);
     return;
   }

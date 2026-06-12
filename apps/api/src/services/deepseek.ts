@@ -1,5 +1,5 @@
-import { env } from "../env.js";
 import { parseLooseJson } from "./llm-json.js";
+import { getConfig } from "./runtime-config.js";
 
 // Shared DeepSeek chat client.
 //
@@ -32,15 +32,16 @@ async function chatRaw(opts: {
   thinking: boolean;
   jsonMode?: boolean;
 }): Promise<{ content: string; usage?: DeepseekUsage }> {
-  if (!env.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY not configured");
+  const cfg = getConfig();
+  if (!cfg.deepseekApiKey) throw new Error("DEEPSEEK_API_KEY not configured");
   const res = await fetch(DEEPSEEK_URL, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${env.DEEPSEEK_API_KEY}`,
+      authorization: `Bearer ${cfg.deepseekApiKey}`,
     },
     body: JSON.stringify({
-      model: env.DEEPSEEK_MODEL,
+      model: cfg.deepseekModel,
       messages: opts.messages,
       temperature: opts.temperature,
       max_tokens: opts.maxTokens,

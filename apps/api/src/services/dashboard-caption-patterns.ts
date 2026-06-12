@@ -1,5 +1,5 @@
 import type { Platform } from "@smm/db";
-import { env } from "../env.js";
+import { getConfig } from "./runtime-config.js";
 import { getRecentPostsWithLatestInsight } from "./dashboard-analytics.js";
 import { writeCached, type CachedAiPayload } from "./dashboard-cache.js";
 import { thinkingJson } from "./deepseek.js";
@@ -70,7 +70,7 @@ Rules:
 export async function generateCaptionPatterns(
   platform?: Platform
 ): Promise<CaptionPatternsPayload> {
-  if (!env.DEEPSEEK_API_KEY) throw new Error("DEEPSEEK_API_KEY not configured");
+  if (!getConfig().deepseekApiKey) throw new Error("DEEPSEEK_API_KEY not configured");
 
   const cacheKind = captionPatternsKind(platform);
   const scope = platform

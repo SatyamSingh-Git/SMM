@@ -77,6 +77,12 @@ async function request<T>(
 
 export const api = {
   health: () => request<{ ok: boolean; killSwitch: boolean }>("/health"),
+  getSettings: () => request<import("./types").AppSettingsView>("/settings"),
+  updateSettings: (patch: import("./types").AppSettingsPatch) =>
+    request<import("./types").AppSettingsView>("/settings", {
+      method: "PATCH",
+      json: patch,
+    }),
   listAccounts: () =>
     request<{ accounts: Account[] }>("/accounts").then((r) => r.accounts),
   refreshToken: (accountId: string) =>
@@ -276,6 +282,8 @@ export const api = {
       counts: Record<string, number>;
       styleExamples: number;
       repliesToday: number;
+      dailyCap: number;
+      perPostCap: number;
     }>("/engagement/stats"),
 
   engagementSleepWindows: () =>

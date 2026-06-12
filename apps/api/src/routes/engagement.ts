@@ -9,6 +9,7 @@ import {
   avoidQuietWindows,
   getDynamicSleepWindowsForDay,
 } from "../services/reply-schedule.js";
+import { getConfig } from "../services/runtime-config.js";
 
 const ListQuery = z.object({
   status: z
@@ -59,7 +60,13 @@ export async function registerEngagementRoutes(app: FastifyInstance): Promise<vo
       prisma.styleExample.count({ where: { platform: "threads" } }),
       todaysReplyCount(),
     ]);
-    return { counts, styleExamples: styleCount, repliesToday };
+    return {
+      counts,
+      styleExamples: styleCount,
+      repliesToday,
+      dailyCap: getConfig().dailyReplyCap,
+      perPostCap: getConfig().perPostReplyCap,
+    };
   });
 
   // GET /engagement/sleep-windows — show the current quiet windows so the

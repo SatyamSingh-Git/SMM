@@ -305,3 +305,32 @@ model PublishJob {
   @@unique([postId, attempt])
   @@index([postId])
 }
+
+// Single-row runtime configuration, editable from the Settings UI. Every value
+// defaults to what used to be a hardcoded constant, so an untouched row behaves
+// exactly like the old code. Read through apps/api/src/services/runtime-config.ts
+// (cached + env-fallback), never directly from hot paths.
+model AppSettings {
+  id                  String   @id @default("singleton")
+  // Reply caps (per IST day).
+  dailyReplyCap       Int      @default(200)
+  perPostReplyCap     Int      @default(60)
+  // Dynamic sleep windows — per session, ONLY the count + minutes-each are
+  // editable. The session time-bands (morning 06-11, evening 16-24 IST) are
+  // fixed by the system. Each day's exact (random) sleep times are computed
+  // once and frozen for the day, so edits never reshuffle the current day.
+  morningSleepCount   Int      @default(2)
+  morningSleepMin     Int      @default(30)
+  eveningSleepCount   Int      @default(4)
+  eveningSleepMin     Int      @default(38)
+  // AI overrides — null/empty falls back to the env var. Keys stored ENCRYPTED
+  // (AES-256-GCM via crypto.ts), never returned to the client in plaintext.
+  deepseekModel       String?
+  visionModel         String?
+  deepseekApiKeyEnc   String?
+  openrouterApiKeyEnc String?
+  // Live operational toggles.
+  killSwitch          Boolean  @default(false)
+  autoReplyEnabled    Boolean  @default(true)
+  updatedAt           DateTime @updatedAt
+}

@@ -1,5 +1,5 @@
 import type { Platform } from "@smm/db";
-import { env } from "../env.js";
+import { getConfig } from "./runtime-config.js";
 import {
   getKpis,
   getRecentPostsWithLatestInsight,
@@ -92,7 +92,7 @@ DATA HONESTY — CRITICAL:
 export async function generateAiInsights(
   platform?: Platform
 ): Promise<DashboardAiInsights> {
-  if (!env.DEEPSEEK_API_KEY) {
+  if (!getConfig().deepseekApiKey) {
     throw new Error("DEEPSEEK_API_KEY not configured");
   }
   const days = 30;

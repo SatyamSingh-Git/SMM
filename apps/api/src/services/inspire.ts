@@ -9,7 +9,7 @@
 // This file adds NOTHING to the existing caption flow — it only imports the
 // already-exported helpers from ai.ts and feeds them a different prompt.
 
-import { env } from "../env.js";
+import { getConfig } from "./runtime-config.js";
 import {
   BRAND_VOICE,
   deepseekChat,
@@ -53,7 +53,7 @@ export async function inspireFromPost(
   // have an image AND OpenRouter is configured. A vision failure is non-fatal:
   // we still write from the pasted text alone.
   let imageDescription: string | null = null;
-  if (opts.imageUrl && env.OPENROUTER_API_KEY) {
+  if (opts.imageUrl && getConfig().openrouterApiKey) {
     try {
       imageDescription = await describeImage(opts.imageUrl);
     } catch (e) {

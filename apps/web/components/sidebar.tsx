@@ -5,7 +5,7 @@ import { Calendar, Camera, LayoutDashboard, Plus, Settings, Sparkles, Wand2 } fr
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-type Route = "calendar" | "dashboard" | "inspire" | "prompts";
+type Route = "calendar" | "dashboard" | "inspire" | "prompts" | "settings";
 type Props = { onCompose: () => void; activeRoute?: Route };
 
 export function Sidebar({ onCompose, activeRoute = "calendar" }: Props) {
@@ -36,7 +36,7 @@ export function Sidebar({ onCompose, activeRoute = "calendar" }: Props) {
       route: "prompts",
     },
     { icon: Sparkles, label: "AI Assist", soon: true },
-    { icon: Settings, label: "Settings", soon: true },
+    { icon: Settings, label: "Settings", href: "/settings", route: "settings" },
   ];
 
   return (
