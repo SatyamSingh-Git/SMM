@@ -53,6 +53,8 @@ function toForm(v: AppSettingsView): Form {
   };
 }
 
+type Section = "limits" | "sleep" | "ai" | "controls";
+
 export default function SettingsPage() {
   const qc = useQueryClient();
   const healthQ = useQuery({ queryKey: ["health"], queryFn: api.health });
@@ -62,25 +64,36 @@ export default function SettingsPage() {
   const [form, setForm] = React.useState<Form | null>(null);
   const [deepseekKey, setDeepseekKey] = React.useState("");
   const [openrouterKey, setOpenrouterKey] = React.useState("");
-  const [saved, setSaved] = React.useState(false);
+  const [savedSection, setSavedSection] = React.useState<Section | null>(null);
 
   React.useEffect(() => {
     if (settingsQ.data && !form) setForm(toForm(settingsQ.data));
   }, [settingsQ.data, form]);
 
+  // One mutation per section so each Save is independent. `section` is passed
+  // through the mutation variables so onSuccess can flag the right section.
   const save = useMutation({
-    mutationFn: (patch: AppSettingsPatch) => api.updateSettings(patch),
-    onSuccess: (v) => {
+    mutationFn: (vars: { section: Section; patch: AppSettingsPatch }) =>
+      api.updateSettings(vars.patch),
+    onSuccess: (v, vars) => {
       setForm(toForm(v));
-      setDeepseekKey("");
-      setOpenrouterKey("");
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      // Only clear the key inputs that this save consumed.
+      if (vars.section === "ai") {
+        setDeepseekKey("");
+        setOpenrouterKey("");
+      }
+      setSavedSection(vars.section);
+      setTimeout(
+        () => setSavedSection((s) => (s === vars.section ? null : s)),
+        2500
+      );
       qc.invalidateQueries({ queryKey: ["settings"] });
       qc.invalidateQueries({ queryKey: ["health"] });
       qc.invalidateQueries({ queryKey: ["engagement", "stats"] });
     },
   });
+  const pendingSection =
+    save.isPending && save.variables ? save.variables.section : null;
 
   if (!form) {
     return (
@@ -97,28 +110,53 @@ export default function SettingsPage() {
 
   const morningOk = fits(form.morningSleepCount, form.morningSleepMin, MORNING_LEN);
   const eveningOk = fits(form.eveningSleepCount, form.eveningSleepMin, EVENING_LEN);
-  const canSave = morningOk && eveningOk && !save.isPending;
-
-  function onSave() {
-    if (!form) return;
-    const patch: AppSettingsPatch = {
-      dailyReplyCap: form.dailyReplyCap,
-      perPostReplyCap: form.perPostReplyCap,
-      morningSleepCount: form.morningSleepCount,
-      morningSleepMin: form.morningSleepMin,
-      eveningSleepCount: form.eveningSleepCount,
-      eveningSleepMin: form.eveningSleepMin,
-      deepseekModel: form.deepseekModel,
-      visionModel: form.visionModel,
-      killSwitch: form.killSwitch,
-      autoReplyEnabled: form.autoReplyEnabled,
-    };
-    if (deepseekKey.trim()) patch.deepseekApiKey = deepseekKey.trim();
-    if (openrouterKey.trim()) patch.openrouterApiKey = openrouterKey.trim();
-    save.mutate(patch);
-  }
 
   const v = settingsQ.data!;
+
+  function saveSection(section: Section) {
+    if (!form) return;
+    let patch: AppSettingsPatch;
+    if (section === "limits") {
+      patch = {
+        dailyReplyCap: form.dailyReplyCap,
+        perPostReplyCap: form.perPostReplyCap,
+      };
+    } else if (section === "sleep") {
+      patch = {
+        morningSleepCount: form.morningSleepCount,
+        morningSleepMin: form.morningSleepMin,
+        eveningSleepCount: form.eveningSleepCount,
+        eveningSleepMin: form.eveningSleepMin,
+      };
+    } else if (section === "ai") {
+      patch = {
+        deepseekModel: form.deepseekModel,
+        visionModel: form.visionModel,
+        ...(deepseekKey.trim() ? { deepseekApiKey: deepseekKey.trim() } : {}),
+        ...(openrouterKey.trim() ? { openrouterApiKey: openrouterKey.trim() } : {}),
+      };
+    } else {
+      patch = {
+        killSwitch: form.killSwitch,
+        autoReplyEnabled: form.autoReplyEnabled,
+      };
+    }
+    save.mutate({ section, patch });
+  }
+
+  const saveRow = (section: Section, disabled = false) => (
+    <SaveRow
+      pending={pendingSection === section}
+      saved={savedSection === section}
+      error={
+        save.isError && save.variables?.section === section
+          ? (save.error as Error).message
+          : null
+      }
+      disabled={disabled}
+      onSave={() => saveSection(section)}
+    />
+  );
 
   return (
     <Shell accounts={accountsQ.data ?? []} health={healthQ.data}>
@@ -127,14 +165,14 @@ export default function SettingsPage() {
           <SettingsIcon className="h-5 w-5 text-[var(--accent)]" /> Settings
         </h1>
         <p className="mt-1 text-sm text-[var(--fg-muted)]">
-          Tune the auto-reply engine and AI providers. Caps + toggles apply
-          immediately; sleep-window changes apply to the next day&apos;s
-          schedule (the current day is already locked).
+          Each section saves on its own. Caps + toggles apply immediately;
+          sleep-window changes apply to the next day&apos;s schedule (the current
+          day is already locked).
         </p>
       </div>
 
       {/* Reply limits */}
-      <Section title="Reply limits" subtitle="Per IST day.">
+      <SectionCard title="Reply limits" subtitle="Per IST day.">
         <div className="grid gap-4 sm:grid-cols-2">
           <NumberField
             label="Daily reply cap"
@@ -153,10 +191,11 @@ export default function SettingsPage() {
             onChange={(n) => set("perPostReplyCap", n)}
           />
         </div>
-      </Section>
+        {saveRow("limits")}
+      </SectionCard>
 
       {/* Sleep windows */}
-      <Section
+      <SectionCard
         title="Sleep windows"
         subtitle="Random micro-breaks the agent takes inside each active session. Times are computed once overnight and frozen for the day."
       >
@@ -178,47 +217,61 @@ export default function SettingsPage() {
           onCount={(n) => set("eveningSleepCount", n)}
           onMin={(n) => set("eveningSleepMin", n)}
         />
-      </Section>
+        {saveRow("sleep", !morningOk || !eveningOk)}
+      </SectionCard>
 
       {/* AI providers */}
-      <Section
+      <SectionCard
         title="AI providers"
         subtitle="Leave a key blank to keep the current one. DeepSeek powers text; OpenRouter powers image vision."
       >
+        {/* Dummy hidden fields absorb the browser's autofill so it doesn't
+            dump a saved email/password into the model + key inputs. */}
+        <input type="text" name="username" autoComplete="username" className="hidden" tabIndex={-1} aria-hidden />
+        <input type="password" name="password" autoComplete="current-password" className="hidden" tabIndex={-1} aria-hidden />
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField
             label="DeepSeek model"
+            name="smm-deepseek-model"
             value={form.deepseekModel}
             placeholder={v.deepseekModelEffective}
             onChange={(s) => set("deepseekModel", s)}
           />
           <TextField
             label="Vision model (OpenRouter)"
+            name="smm-vision-model"
             value={form.visionModel}
             placeholder={v.visionModelEffective}
             onChange={(s) => set("visionModel", s)}
           />
           <KeyField
             label="DeepSeek API key"
+            name="smm-deepseek-key"
             configured={v.deepseekApiKeyConfigured}
             last4={v.deepseekApiKeyLast4}
             value={deepseekKey}
             onChange={setDeepseekKey}
-            onResetToEnv={() => save.mutate({ deepseekApiKey: "" })}
+            onResetToEnv={() =>
+              save.mutate({ section: "ai", patch: { deepseekApiKey: "" } })
+            }
           />
           <KeyField
             label="OpenRouter API key"
+            name="smm-openrouter-key"
             configured={v.openrouterApiKeyConfigured}
             last4={v.openrouterApiKeyLast4}
             value={openrouterKey}
             onChange={setOpenrouterKey}
-            onResetToEnv={() => save.mutate({ openrouterApiKey: "" })}
+            onResetToEnv={() =>
+              save.mutate({ section: "ai", patch: { openrouterApiKey: "" } })
+            }
           />
         </div>
-      </Section>
+        {saveRow("ai")}
+      </SectionCard>
 
       {/* Controls */}
-      <Section title="Controls" subtitle="Live operational switches.">
+      <SectionCard title="Controls" subtitle="Live operational switches.">
         <Toggle
           label="Kill switch"
           hint="Pause ALL publishing and auto-replies instantly."
@@ -232,30 +285,43 @@ export default function SettingsPage() {
           checked={form.autoReplyEnabled}
           onChange={(b) => set("autoReplyEnabled", b)}
         />
-      </Section>
-
-      {/* Save bar */}
-      <div className="sticky bottom-0 flex items-center justify-end gap-3 border-t border-[var(--border)] bg-[var(--bg)]/90 py-3 backdrop-blur">
-        {save.isError && (
-          <span className="text-xs text-[var(--danger)]">
-            {(save.error as Error).message}
-          </span>
-        )}
-        {saved && (
-          <span className="flex items-center gap-1 text-xs text-[var(--success)]">
-            <Check className="h-3.5 w-3.5" /> Saved
-          </span>
-        )}
-        <Button variant="accent" onClick={onSave} disabled={!canSave}>
-          {save.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          Save settings
-        </Button>
-      </div>
+        {saveRow("controls")}
+      </SectionCard>
     </Shell>
+  );
+}
+
+function SaveRow(props: {
+  pending: boolean;
+  saved: boolean;
+  error: string | null;
+  disabled?: boolean;
+  onSave: () => void;
+}) {
+  return (
+    <div className="mt-1 flex items-center justify-end gap-3 border-t border-[var(--border)] pt-3">
+      {props.error && (
+        <span className="text-[11px] text-[var(--danger)]">{props.error}</span>
+      )}
+      {props.saved && (
+        <span className="flex items-center gap-1 text-[11px] text-[var(--success)]">
+          <Check className="h-3.5 w-3.5" /> Saved
+        </span>
+      )}
+      <Button
+        variant="accent"
+        size="sm"
+        onClick={props.onSave}
+        disabled={props.pending || props.disabled}
+      >
+        {props.pending ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Save className="h-3.5 w-3.5" />
+        )}
+        Save
+      </Button>
+    </div>
   );
 }
 
@@ -286,7 +352,7 @@ function Shell({
   );
 }
 
-function Section(props: {
+function SectionCard(props: {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
@@ -336,6 +402,7 @@ function NumberField(props: {
 
 function TextField(props: {
   label: string;
+  name: string;
   value: string;
   placeholder?: string;
   onChange: (s: string) => void;
@@ -346,6 +413,10 @@ function TextField(props: {
         {props.label}
       </label>
       <Input
+        name={props.name}
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
         value={props.value}
         placeholder={props.placeholder}
         onChange={(e) => props.onChange(e.target.value)}
@@ -357,6 +428,7 @@ function TextField(props: {
 
 function KeyField(props: {
   label: string;
+  name: string;
   configured: boolean;
   last4: string | null;
   value: string;
@@ -370,6 +442,10 @@ function KeyField(props: {
       </label>
       <Input
         type="password"
+        name={props.name}
+        autoComplete="new-password"
+        autoCorrect="off"
+        spellCheck={false}
         value={props.value}
         placeholder={
           props.configured ? `configured ••••${props.last4 ?? ""}` : "not set"
