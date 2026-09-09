@@ -12,6 +12,12 @@ import {
   updatePost,
 } from "../services/posts.js";
 import { duplicateAsThreadsDraft } from "../services/duplicate-threads.js";
+import {
+  CHAIN_ITEM_MAX,
+  CHAIN_MAX_ITEMS,
+  validatePost,
+  type PostType as RulePostType,
+} from "@smm/shared";
 
 const Platform = z.enum(["instagram", "threads"]);
 const PostType = z.enum([
@@ -49,8 +55,8 @@ const IgExtras = z.object({
 // for this post.
 const ChainItem = z
   .object({
-    text: z.string().max(500).optional(),
-    assetIds: z.array(z.string()).max(20).optional(),
+    text: z.string().max(CHAIN_ITEM_MAX).optional(),
+    assetIds: z.array(z.string()).max(CHAIN_MAX_ITEMS).optional(),
   })
   .refine(
     (v) =>
@@ -71,42 +77,73 @@ export const CreateBody = z
     topicTag: z.string().max(50).nullish(),
     scheduledAt: z.string().datetime().nullish(),
   })
-  // Server-side hard blocks for deterministic Meta rejections — defense in depth
-  // behind the compose UI (the publish retry exists for TRANSIENT failures, not
-  // malformed posts, so these should never reach the queue).
+  // Deterministic Meta rejections, caught before the post reaches the queue.
+  // The publish retry exists for TRANSIENT failures; a post that breaks one of
+  // these can never succeed, so letting it through only burns three attempts
+  // and leaves a failed row. The rules live in @smm/shared so the composer UI
+  // and both write paths read one table.
   .superRefine((v, ctx) => {
-    // Threads caption hard cap is 500 (IG is 2200, already covered by .max).
-    if (v.platform === "threads" && (v.caption?.length ?? 0) > 500) {
+    for (const violation of validatePost({
+      type: v.type,
+      platform: v.platform,
+      caption: v.caption,
+      // A post with no scheduledAt is a draft the user is still assembling, so
+      // "not enough media yet" is not an error. Everything else still is.
+      stage: v.scheduledAt ? "publish" : "draft",
+      mediaCount: v.mediaAssetIds.length,
+      chainItems: v.replyChain?.map((c) => ({
+        text: c.text,
+        assetCount: c.assetIds?.length ?? 0,
+      })),
+    })) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["caption"],
-        message: "Threads caption must be ≤500 characters",
+        path: [violation.field],
+        message: violation.message,
       });
-    }
-    // IG carousel needs 2-10 items.
-    if (v.type === "ig_carousel") {
-      const n = v.mediaAssetIds.length;
-      if (n < 2 || n > 10) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["mediaAssetIds"],
-          message: "Carousel needs 2–10 items",
-        });
-      }
     }
   });
 
 // PATCH /posts/:id — everything optional. AccountId/platform are immutable.
-export const UpdateBody = z.object({
-  type: PostType.optional(),
-  caption: z.string().max(2200).nullish(),
-  mediaAssetIds: z.array(z.string()).optional(),
-  assetMetas: z.array(AssetMeta).max(20).optional(),
-  replyChain: z.array(ChainItem).max(20).nullish(),
-  igExtras: IgExtras.nullish(),
-  topicTag: z.string().max(50).nullish(),
-  scheduledAt: z.string().datetime().nullish(),
-});
+//
+// This used to have no superRefine at all, so the hard blocks applied on create
+// but not on edit: a PATCH could set a Threads caption over 500 chars, or a
+// 1-item carousel — both guaranteed Meta rejections — and they went straight to
+// the publish queue. Editing a queued post is a normal path, so the gap was
+// reachable. It now runs the same shared validator as create.
+//
+// Only the fields present in the patch can be checked here; `type` has to be
+// among them for a rule to apply, since the rules are keyed by post type.
+export const UpdateBody = z
+  .object({
+    type: PostType.optional(),
+    caption: z.string().max(2200).nullish(),
+    mediaAssetIds: z.array(z.string()).optional(),
+    assetMetas: z.array(AssetMeta).max(20).optional(),
+    replyChain: z.array(ChainItem).max(CHAIN_MAX_ITEMS).nullish(),
+    igExtras: IgExtras.nullish(),
+    topicTag: z.string().max(50).nullish(),
+    scheduledAt: z.string().datetime().nullish(),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.type) return;
+    for (const violation of validatePost({
+      type: v.type as RulePostType,
+      caption: v.caption ?? undefined,
+      stage: v.scheduledAt ? "publish" : "draft",
+      mediaCount: v.mediaAssetIds?.length,
+      chainItems: v.replyChain?.map((c) => ({
+        text: c.text,
+        assetCount: c.assetIds?.length ?? 0,
+      })),
+    })) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [violation.field],
+        message: violation.message,
+      });
+    }
+  });
 
 const ListQuery = z.object({
   status: z

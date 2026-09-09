@@ -136,7 +136,7 @@ Nine phases. Sequenced so each one is independently shippable and leaves the sys
 | 0.5 | Infra migration to Oracle Cloud | 2–3 d | Phase 0 green | ⏸ parked — needs both instances |
 | 1 | Config core: identity + voice | 5–7 d | Phase 0.5 cut over | ✅ **done** |
 | 2 | Visual config + taxonomy as data | 4–5 d | Phase 1 shipped | |
-| 3 | Cadence + policy as data | 4–5 d | Phase 1 shipped | |
+| 3 | Cadence + policy as data | 4–5 d | Phase 1 shipped | ✅ **done** |
 | 4 | Instagram engagement parity | 6–8 d | Phase 3 shipped | |
 | 5 | Media generation pipeline | 6–8 d | Phase 2 shipped | |
 | 6 | The autonomy loop | 8–10 d | Phases 4 + 5 shipped | |
@@ -430,7 +430,19 @@ CRUD per dimension, drag to reorder, enable/disable, and an "add dimension" affo
 
 ---
 
-## Phase 3 — Cadence + policy as data
+## Phase 3 — Cadence + policy as data — **DONE**
+
+See [docs/CADENCE.md](docs/CADENCE.md). Shipped: zone-aware time math replacing the fixed IST offset; cadence (timezone, quiet windows, session bands) in the profile; `@smm/shared` platform-rules table used by the API and the web app; the `UpdateBody` gap closed on both the schema and the merged-post path; the autonomy gate.
+
+**The `UpdateBody` bug is fixed.** `PATCH /posts/:id` ran no hard blocks at all, so an edit could put a guaranteed Meta rejection into the publish queue. Both write paths now share one validator, and `updatePost` re-validates the merged post because the route schema can only see the patch — a PATCH omitting `scheduledAt` on an already-queued post would otherwise read as a draft and skip the minimums.
+
+**A draft/publish distinction was needed and is new.** Enforcing minimums at create time would have blocked saving an incomplete post — the old code only did this for carousels, inconsistently. Minimums now apply at publish; maximums, caption caps and type/platform mismatches apply always.
+
+**Mutation-verified, and the first attempt was vacuous.** A DST test that only pushed off *static* quiet windows passed against both the old and new math, because the static windows were already resolved through the timezone. The replacement observes a dynamic sleep window directly and does fail against the old `local midnight + N minutes` math.
+
+Deviation: sleep counts and durations stay in `AppSettings` rather than moving into cadence. They are weekly tuning knobs with a working Settings UI; moving them would have meant rewriting that page for no gain. Documented in CADENCE.md.
+
+## Phase 3 (original plan) — Cadence + policy as data
 
 ### 3.1 Timezone (1.5 d) — the sharp edge
 

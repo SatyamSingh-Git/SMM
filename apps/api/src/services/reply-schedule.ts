@@ -15,65 +15,59 @@
 //      re-checks in a loop in case the pushed time lands in an adjacent window.
 //   5. Hard cap 300 replies per IST day. Past that, skip the comment.
 //
-// IST is UTC+5:30 fixed (no DST). All math goes through that offset.
+// The account's timezone, quiet windows and session bands all come from
+// profile.cadence (services/profile/types.ts). Cadence fails OPEN to defaults
+// that reproduce the old hardcoded constants — replying on a sensible default
+// schedule is harmless, unlike replying in a default voice.
+//
+// Every local wall-clock boundary resolves to an absolute UTC instant through
+// services/tz.ts, never by subtracting a fixed offset. That is what keeps the
+// schedule correct in a DST zone, where a local day can be 23 or 25 hours long
+// and "local midnight + 960 minutes" is not 16:00.
 
 import { prisma } from "@smm/db";
 import { getConfig } from "./runtime-config.js";
+import { getCadence } from "./profile/resolver.js";
+import { localDateKey, localDatePlus, zonedTimeToUtcMs } from "./tz.js";
 
-const IST_OFFSET_MIN = 5 * 60 + 30;
-
-// Quiet windows — NO replies during these hours (IST).
-// The overnight window crosses midnight: 23:00 IST today → 06:00 IST tomorrow.
-// Encoded as a single entry with endH = 30 (24 + 6); Date.UTC normalizes the
-// overflow into the next calendar day cleanly, so a single window covers the
-// whole 7-hour overnight sleep without splitting.
-const QUIET_WINDOWS_IST: Array<{ startH: number; endH: number }> = [
-  { startH: 23, endH: 30 },     // 23:00 IST today → 06:00 IST tomorrow (7h overnight)
-  { startH: 11, endH: 12 },     // 11-12 IST (1h late-morning break)
-  { startH: 14, endH: 16 },     // 14-16 IST (2h afternoon break)
-];
-
-// Session bounds + sleep-window counts/durations now come from runtime config
-// (getConfig().morning / .evening). Minimum active time between sleeps (and at
-// session edges) so two sleeps don't merge into one long break stays fixed.
+// Minimum active time between sleeps (and at session edges) so two sleeps
+// don't merge into one long break. A rail, not a preference.
 const MIN_ACTIVE_SEGMENT_MIN = 20;
 
-function toIstDate(utcMs: number): Date {
-  return new Date(utcMs + IST_OFFSET_MIN * 60_000);
+/**
+ * The UTC instant of a local wall-clock time, `dayOffset` days from the local
+ * day containing `referenceMs`. `hour` may exceed 24 — the overnight quiet
+ * window is expressed as 23 -> 30.
+ */
+function zonedHourToUtcMs(
+  referenceMs: number,
+  dayOffset: number,
+  hour: number,
+  minute = 0
+): number {
+  const tz = getCadence().timezone;
+  const d = localDatePlus(referenceMs, dayOffset, tz);
+  return zonedTimeToUtcMs(d.year, d.month, d.day, hour, minute, tz);
 }
 
-/** Given a reference UTC ms instant + day offset + IST hour, return matching UTC ms. */
-function istHourToUtcMs(referenceMs: number, dayOffset: number, hour: number): number {
-  const ist = toIstDate(referenceMs);
-  const y = ist.getUTCFullYear();
-  const m = ist.getUTCMonth();
-  const d = ist.getUTCDate() + dayOffset;
-  return Date.UTC(y, m, d, hour, 0, 0) - IST_OFFSET_MIN * 60_000;
+/** "YYYY-MM-DD" for the account's local day containing this instant. */
+export function accountDateKey(utcMs: number): string {
+  return localDateKey(utcMs, getCadence().timezone);
 }
 
-export function istDateKey(utcMs: number): string {
-  const d = toIstDate(utcMs);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export function istDayStartUtcMs(utcMs: number): number {
-  return istHourToUtcMs(utcMs, 0, 0);
+export function accountDayStartUtcMs(utcMs: number): number {
+  return zonedHourToUtcMs(utcMs, 0, 0);
 }
 
 // ---------- Deterministic per-day dynamic sleep windows ----------
 
-// Compute the IST date key for (referenceMs + dayOffset days). Used by
-// dynamicWindowsForDay to seed the PRNG so each IST day gets stable windows.
-function istDateKeyWithOffset(referenceMs: number, dayOffset: number): string {
-  const istMs = referenceMs + IST_OFFSET_MIN * 60_000 + dayOffset * 86400_000;
-  const d = new Date(istMs);
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+// The local date key for (referenceMs + dayOffset days). Used by
+// dynamicWindowsForDay to seed the PRNG so each local day gets stable windows.
+// Shifts by CALENDAR days rather than adding 86_400_000ms, which is what keeps
+// it correct across a DST transition.
+function dateKeyWithOffset(referenceMs: number, dayOffset: number): string {
+  const d = localDatePlus(referenceMs, dayOffset, getCadence().timezone);
+  return `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`;
 }
 
 // FNV-1a-ish 32-bit hash. Stable + good distribution for date-string seeds.
@@ -178,17 +172,21 @@ export function getDynamicSleepWindowsForDay(
   if (memoed) return memoed;
 
   const cfg = getConfig();
+  const cadence = getCadence();
   // Per-session RNG seeds (instead of a shared rng walked in fixed order) so the
   // evening windows are independent of whether morning happened to be feasible.
   const morningRng = mulberry32(hashSeed(dateKey + ":morning"));
   const eveningRng = mulberry32(hashSeed(dateKey + ":evening"));
+  // Bands are profile config; how many sleeps and how long they run stay in
+  // AppSettings, because those are weekly tuning knobs rather than facts about
+  // the account.
   const morning = pickSleepWindowsInSession(
-    { startMin: cfg.morning.startMin, endMin: cfg.morning.endMin },
+    cadence.morningSession,
     cfg.morning.sleeps,
     morningRng
   );
   const evening = pickSleepWindowsInSession(
-    { startMin: cfg.evening.startMin, endMin: cfg.evening.endMin },
+    cadence.eveningSession,
     cfg.evening.sleeps,
     eveningRng
   );
@@ -206,9 +204,9 @@ export function getDynamicSleepWindowsForDay(
   return windows;
 }
 
-/** Pretty-print today's dynamic sleep windows as "HH:MM-HH:MM, ..." (IST). */
+/** Pretty-print today's dynamic sleep windows as "HH:MM-HH:MM, ..." (local). */
 export function formatDynamicSleepWindowsToday(): string {
-  const todayKey = istDateKey(Date.now());
+  const todayKey = accountDateKey(Date.now());
   const windows = getDynamicSleepWindowsForDay(todayKey);
   if (windows.length === 0) return "(none)";
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -233,23 +231,34 @@ type AbsWindow = { startMs: number; endMs: number };
 
 function staticWindowsForDay(referenceMs: number, dayOffset: number): AbsWindow[] {
   const out: AbsWindow[] = [];
-  for (const w of QUIET_WINDOWS_IST) {
+  for (const w of getCadence().quietWindows) {
     out.push({
-      startMs: istHourToUtcMs(referenceMs, dayOffset, w.startH),
-      endMs: istHourToUtcMs(referenceMs, dayOffset, w.endH),
+      startMs: zonedHourToUtcMs(referenceMs, dayOffset, w.startH),
+      endMs: zonedHourToUtcMs(referenceMs, dayOffset, w.endH),
     });
   }
   return out;
 }
 
 function dynamicWindowsForDay(referenceMs: number, dayOffset: number): AbsWindow[] {
-  const dateKey = istDateKeyWithOffset(referenceMs, dayOffset);
+  const dateKey = dateKeyWithOffset(referenceMs, dayOffset);
   const windows = getDynamicSleepWindowsForDay(dateKey);
-  // 00:00 IST of the (referenceMs+dayOffset) IST day, in UTC ms.
-  const dayStartUtcMs = istHourToUtcMs(referenceMs, dayOffset, 0);
+  // Each boundary resolves as a LOCAL WALL-CLOCK time on that local date, not
+  // as "local midnight + N minutes". On a DST day those differ by an hour, and
+  // the difference is a reply firing inside what should be a sleep window.
   return windows.map((w) => ({
-    startMs: dayStartUtcMs + w.startMin * 60_000,
-    endMs: dayStartUtcMs + w.endMin * 60_000,
+    startMs: zonedHourToUtcMs(
+      referenceMs,
+      dayOffset,
+      Math.floor(w.startMin / 60),
+      w.startMin % 60
+    ),
+    endMs: zonedHourToUtcMs(
+      referenceMs,
+      dayOffset,
+      Math.floor(w.endMin / 60),
+      w.endMin % 60
+    ),
   }));
 }
 
@@ -308,7 +317,7 @@ export function planReplyTime(nowMs: number = Date.now()): {
 }
 
 /**
- * Count replies committed for today (IST). Counts queued + replying + replied
+ * Count replies committed for today (account-local). Counts queued + replying + replied
  * so we never overshoot the cap with in-flight comments.
  *
  * excludeCommentId: at SEND time the comment being processed is already flipped
@@ -318,7 +327,7 @@ export function planReplyTime(nowMs: number = Date.now()): {
  * lose one reply at the exact cap).
  */
 export async function todaysReplyCount(excludeCommentId?: string): Promise<number> {
-  const dayStart = new Date(istDayStartUtcMs(Date.now()));
+  const dayStart = new Date(accountDayStartUtcMs(Date.now()));
   return prisma.engagementComment.count({
     where: {
       receivedAt: { gte: dayStart },
@@ -334,7 +343,7 @@ export async function isOverDailyCap(excludeCommentId?: string): Promise<boolean
 }
 
 /**
- * Count committed replies for ONE post today (IST). Same semantics as
+ * Count committed replies for ONE post today (account-local). Same semantics as
  * todaysReplyCount but scoped to a single platformPostId. See excludeCommentId
  * note above.
  */
@@ -342,7 +351,7 @@ export async function postReplyCountToday(
   platformPostId: string,
   excludeCommentId?: string
 ): Promise<number> {
-  const dayStart = new Date(istDayStartUtcMs(Date.now()));
+  const dayStart = new Date(accountDayStartUtcMs(Date.now()));
   return prisma.engagementComment.count({
     where: {
       platformPostId,

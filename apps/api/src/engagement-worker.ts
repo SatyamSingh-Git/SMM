@@ -16,7 +16,7 @@ import {
   isOverDailyCap,
   isOverPerPostCap,
   avoidQuietWindows,
-  istDateKey,
+  accountDateKey,
   formatDynamicSleepWindowsToday,
 } from "./services/reply-schedule.js";
 import { getConfig } from "./services/runtime-config.js";
@@ -116,7 +116,7 @@ async function processOneReply(commentId: string): Promise<void> {
   // was received. Catches anything that slipped to a later day — a backlog after
   // worker downtime, a boot-recovery re-queue, or a manual retry of an old
   // comment. No "ahead", no "backwards".
-  if (istDateKey(Date.now()) !== istDateKey(comment.receivedAt.getTime())) {
+  if (accountDateKey(Date.now()) !== accountDateKey(comment.receivedAt.getTime())) {
     await prisma.engagementComment.update({
       where: { id: commentId },
       data: {
@@ -528,7 +528,7 @@ console.log(
   "[engage] runner ready (Postgres polling, 90s reply / 8min comments / 60s hot-post burst, IST quiet-window aware)"
 );
 console.log(
-  `[engage] dynamic sleep windows today (IST): ${formatDynamicSleepWindowsToday()}`
+  `[engage] dynamic sleep windows today: ${formatDynamicSleepWindowsToday()}`
 );
 
 process.on("SIGINT", () => {

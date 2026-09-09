@@ -17,11 +17,25 @@ const TEST_CONFIG = {
 };
 vi.mock("./runtime-config.js", () => ({ getConfig: () => TEST_CONFIG }));
 
+// Cadence comes from the profile now. Spelled out here so a change to the
+// defaults shows up as a failing test rather than as a different schedule.
+const TEST_CADENCE = {
+  timezone: "Asia/Kolkata",
+  quietWindows: [
+    { startH: 23, endH: 30 },
+    { startH: 11, endH: 12 },
+    { startH: 14, endH: 16 },
+  ],
+  morningSession: { startMin: 6 * 60, endMin: 11 * 60 },
+  eveningSession: { startMin: 16 * 60, endMin: 24 * 60 },
+};
+vi.mock("./profile/resolver.js", () => ({ getCadence: () => TEST_CADENCE }));
+
 import {
+  accountDateKey,
+  accountDayStartUtcMs,
   avoidQuietWindows,
   getDynamicSleepWindowsForDay,
-  istDateKey,
-  istDayStartUtcMs,
   planReplyTime,
 } from "./reply-schedule.js";
 
@@ -38,25 +52,25 @@ function utcFromIst(y: number, m: number, d: number, h: number, min = 0): number
   return Date.UTC(y, m - 1, d, h, min) - IST_OFFSET_MS;
 }
 
-describe("IST date helpers", () => {
+describe("account-local date helpers", () => {
   it("maps a UTC instant to its IST calendar day", () => {
     // 18:29 UTC is 23:59 IST the same day.
-    expect(istDateKey(Date.UTC(2026, 5, 14, 18, 29))).toBe("2026-06-14");
+    expect(accountDateKey(Date.UTC(2026, 5, 14, 18, 29))).toBe("2026-06-14");
     // 18:30 UTC is 00:00 IST the next day — the boundary that matters for the
     // daily reply cap and for seeding each day's sleep windows.
-    expect(istDateKey(Date.UTC(2026, 5, 14, 18, 30))).toBe("2026-06-15");
+    expect(accountDateKey(Date.UTC(2026, 5, 14, 18, 30))).toBe("2026-06-15");
   });
 
   it("returns 00:00 IST of the current IST day as a UTC instant", () => {
     const midMorning = utcFromIst(2026, 6, 15, 9, 45);
-    expect(istDayStartUtcMs(midMorning)).toBe(utcFromIst(2026, 6, 15, 0, 0));
-    expect(istHour(istDayStartUtcMs(midMorning))).toBe(0);
+    expect(accountDayStartUtcMs(midMorning)).toBe(utcFromIst(2026, 6, 15, 0, 0));
+    expect(istHour(accountDayStartUtcMs(midMorning))).toBe(0);
   });
 
   it("keeps a late-evening IST instant on the same IST day", () => {
     const lateEvening = utcFromIst(2026, 6, 15, 23, 30);
-    expect(istDateKey(lateEvening)).toBe("2026-06-15");
-    expect(istDayStartUtcMs(lateEvening)).toBe(utcFromIst(2026, 6, 15, 0, 0));
+    expect(accountDateKey(lateEvening)).toBe("2026-06-15");
+    expect(accountDayStartUtcMs(lateEvening)).toBe(utcFromIst(2026, 6, 15, 0, 0));
   });
 });
 
@@ -240,5 +254,136 @@ describe("planReplyTime", () => {
       const now = utcFromIst(2026, 6, 25, 0, minute);
       expect(planReplyTime(now).fireAtMs).toBeGreaterThan(now);
     }
+  });
+});
+
+// The scheduler previously assumed a fixed offset with an explicit "no DST"
+// note. Now that the timezone is config, these are the cases that broke it:
+// a spring day is 23 hours and a fall day is 25, so a window computed as
+// "local midnight + N minutes" drifts an hour away from the wall clock it is
+// supposed to track — and a drifted sleep window means a reply firing during
+// what should be quiet time.
+describe("DST zones", () => {
+  const NY_CADENCE = { ...TEST_CADENCE, timezone: "America/New_York" };
+
+  async function withNewYork() {
+    vi.resetModules();
+    vi.doMock("./runtime-config.js", () => ({ getConfig: () => TEST_CONFIG }));
+    vi.doMock("./profile/resolver.js", () => ({ getCadence: () => NY_CADENCE }));
+    return import("./reply-schedule.js");
+  }
+
+  function nyMinutesOfDay(utcMs: number): number {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(new Date(utcMs));
+    const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+    return get("hour") * 60 + get("minute");
+  }
+
+  // US DST 2026: forward Sun 8 Mar, back Sun 1 Nov.
+  const DAYS = [
+    ["spring forward", Date.UTC(2026, 2, 8, 12, 0)],
+    ["fall back", Date.UTC(2026, 10, 1, 12, 0)],
+    ["ordinary day", Date.UTC(2026, 5, 15, 12, 0)],
+  ] as const;
+
+  it.each(DAYS)("never schedules inside a quiet window on a %s day", async (_label, noon) => {
+    const mod = await withNewYork();
+    const dayStart = noon - 12 * 3_600_000;
+    for (let minute = 0; minute < 26 * 60; minute += 11) {
+      const now = dayStart + minute * 60_000;
+      const { fireAtMs } = mod.planReplyTime(now);
+      const local = nyMinutesOfDay(fireAtMs);
+      // 23:00-06:00, 11:00-12:00, 14:00-16:00 local must all be empty.
+      const inQuiet =
+        local >= 23 * 60 ||
+        local < 6 * 60 ||
+        (local >= 11 * 60 && local < 12 * 60) ||
+        (local >= 14 * 60 && local < 16 * 60);
+      expect(inQuiet, `arrival +${minute}m fired at local ${local}m`).toBe(false);
+    }
+    vi.doUnmock("./profile/resolver.js");
+    vi.resetModules();
+  });
+
+  it("keeps sleep windows inside their session on a 23-hour day", async () => {
+    const mod = await withNewYork();
+    // 2026-03-08 is the short day; its windows must still sit inside the
+    // configured local bands rather than sliding out of them.
+    const windows = mod.getDynamicSleepWindowsForDay("2026-03-08");
+    for (const w of windows) {
+      const inMorning = w.startMin >= 6 * 60 && w.endMin <= 11 * 60;
+      const inEvening = w.startMin >= 16 * 60 && w.endMin <= 24 * 60;
+      expect(inMorning || inEvening, JSON.stringify(w)).toBe(true);
+    }
+    vi.doUnmock("./profile/resolver.js");
+    vi.resetModules();
+  });
+
+  // The test that actually observes the conversion. The others push off the
+  // STATIC quiet windows, which were already resolved through the timezone and
+  // stayed correct even under the old "local midnight + N minutes" math — so
+  // they pass either way and prove nothing about this bug.
+  //
+  // A dynamic sleep window is only observable through avoidQuietWindows: an
+  // instant inside one gets pushed out. So take a real window for the
+  // 23-hour day, resolve its local start to an absolute instant CORRECTLY, and
+  // assert the scheduler agrees that instant is asleep. Under the old math the
+  // window sits an hour away from its own wall-clock time, that instant falls
+  // outside it, and nothing is pushed.
+  it("places dynamic sleep windows at the right wall-clock time on a 23-hour day", async () => {
+    const mod = await withNewYork();
+    const { zonedTimeToUtcMs } = await import("./tz.js");
+
+    const windows = mod.getDynamicSleepWindowsForDay("2026-03-08");
+    // Morning-session windows only: 06:00-11:00 local sits clear of every
+    // static quiet window, so any push can only come from the dynamic one.
+    const morning = windows.filter((w) => w.endMin <= 11 * 60);
+    expect(morning.length).toBeGreaterThan(0);
+
+    for (const w of morning) {
+      const midMin = Math.floor((w.startMin + w.endMin) / 2);
+      const instant = zonedTimeToUtcMs(
+        2026,
+        3,
+        8,
+        Math.floor(midMin / 60),
+        midMin % 60,
+        "America/New_York"
+      );
+      expect(
+        mod.avoidQuietWindows(instant),
+        `local ${midMin}m is inside a sleep window and must be pushed`
+      ).toBeGreaterThan(instant);
+    }
+
+    // And the converse: a local time in the same session but clear of every
+    // window must NOT be pushed, so the assertion above is not just "pushes
+    // everything".
+    const gaps: number[] = [];
+    for (let m = 6 * 60; m < 11 * 60; m += 5) {
+      if (!morning.some((w) => m >= w.startMin - 5 && m < w.endMin + 5)) gaps.push(m);
+    }
+    expect(gaps.length).toBeGreaterThan(0);
+    const clear = zonedTimeToUtcMs(
+      2026, 3, 8, Math.floor(gaps[0]! / 60), gaps[0]! % 60, "America/New_York"
+    );
+    expect(mod.avoidQuietWindows(clear)).toBe(clear);
+
+    vi.doUnmock("./profile/resolver.js");
+    vi.resetModules();
+  });
+
+  it("gives the same local date key either side of a transition", async () => {
+    const mod = await withNewYork();
+    // 03:30 UTC on 9 Mar is 22:30 local on 8 Mar (EST->EDT already applied).
+    expect(mod.accountDateKey(Date.UTC(2026, 2, 9, 3, 30))).toBe("2026-03-08");
+    expect(mod.accountDateKey(Date.UTC(2026, 2, 9, 5, 30))).toBe("2026-03-09");
+    vi.doUnmock("./profile/resolver.js");
+    vi.resetModules();
   });
 });

@@ -1,3 +1,5 @@
+import { PLATFORM_RULES, type PostType } from "@smm/shared";
+
 // Caption-only lint. Soft, deterministic, zero-LLM warnings for patterns that
 // hurt reach on Instagram/Threads CAPTIONS specifically.
 //
@@ -85,15 +87,15 @@ export function lintCaption(text: string): CaptionWarning[] {
 // score, so it never pushes the caption toward marketing polish.
 export type HookBadge = { tone: "good" | "warn"; label: string };
 
-export function checkHook(text: string, platform: "instagram" | "threads", postType: string): HookBadge[] {
+export function checkHook(text: string, postType: string): HookBadge[] {
   const firstLine = (text.split("\n")[0] ?? "").trim();
   if (!firstLine) return [];
   const badges: HookBadge[] = [];
 
-  // The cutoff is what most viewers see before "more". ig_reel truncates
-  // hardest (~55); feed/carousel ~125; threads shows ~the whole short post.
-  const cutoff =
-    postType === "ig_reel" ? 55 : platform === "instagram" ? 125 : 0;
+  // The cutoff is what most viewers see before "more" — read from the shared
+  // platform table so the composer, the API and this agree by construction
+  // rather than by everyone remembering the same number.
+  const cutoff = PLATFORM_RULES[postType as PostType]?.hookCutoff ?? 0;
   if (cutoff > 0) {
     if (firstLine.length <= cutoff) {
       badges.push({ tone: "good", label: `hook fits (${firstLine.length}/${cutoff})` });

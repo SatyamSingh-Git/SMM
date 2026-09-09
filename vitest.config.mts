@@ -6,7 +6,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["apps/**/*.test.ts"],
+    include: ["apps/**/*.test.ts", "packages/**/*.test.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**"],
     // env.ts zod-parses process.env at import time, so anything importing it
     // needs these present. Values are fakes — no test connects to either.

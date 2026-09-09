@@ -7,11 +7,14 @@ import {
   PolicySchema,
   VisualSchema,
   VoiceSchema,
+  MIN_QUIET_HOURS_PER_DAY,
+  quietHoursPerDay,
   unknownPlaceholders,
   type Voice,
 } from "../services/profile/types.js";
 import { parseProfileRow, refreshProfile } from "../services/profile/resolver.js";
 import { composeSystemPrompt } from "../services/prompt/compose.js";
+import { isValidTimeZone } from "../services/tz.js";
 
 // The Profile is what used to be hardcoded prompt constants. Editing it
 // changes what the account sounds like, so every write snapshots the previous
@@ -84,6 +87,36 @@ export async function registerProfileRoutes(app: FastifyInstance): Promise<void>
       .safeParse(next);
     if (!check.success) {
       return reply.code(400).send({ error: check.error.flatten() });
+    }
+
+    if (!isValidTimeZone(next.cadence.timezone)) {
+      return reply.code(400).send({
+        error: `unknown timezone "${next.cadence.timezone}" — use an IANA name like Asia/Kolkata`,
+      });
+    }
+
+    // Safety rail, not a preference. A schedule with no quiet time is a bot
+    // pattern, and the human-cadence defence is the main thing standing between
+    // this system and an action-block on an irreplaceable account. Preferences
+    // are configurable; rails are not.
+    const quiet = quietHoursPerDay(next.cadence.quietWindows);
+    if (quiet < MIN_QUIET_HOURS_PER_DAY) {
+      return reply.code(400).send({
+        error:
+          `quiet windows total ${quiet}h/day; at least ${MIN_QUIET_HOURS_PER_DAY}h is required. ` +
+          `Replying around the clock is a bot pattern and risks the account.`,
+      });
+    }
+
+    for (const [label, band] of [
+      ["morning", next.cadence.morningSession],
+      ["evening", next.cadence.eveningSession],
+    ] as const) {
+      if (band.endMin - band.startMin < 60) {
+        return reply.code(400).send({
+          error: `${label} session is shorter than an hour; there would be no room to place a sleep window`,
+        });
+      }
     }
 
     // A typo'd placeholder would render literally into a live prompt. Cheaper

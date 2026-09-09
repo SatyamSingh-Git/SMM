@@ -1,5 +1,6 @@
 import { prisma, type Platform, type PostType, type PostStatus } from "@smm/db";
 import { suggestCaptions } from "./ai.js";
+import { validatePost, type PostType as RulePostType } from "@smm/shared";
 
 export type IgPostExtras = {
   locationId?: string;
@@ -137,6 +138,40 @@ export async function updatePost(id: string, input: Partial<CreatePostInput>) {
         ? new Date(input.scheduledAt)
         : null;
   const newStatus = scheduledAt ? "queued" : "draft";
+
+  // Authoritative hard-block check. The route schema can only see the patch;
+  // this sees the MERGED post, which is what actually reaches the publisher.
+  // Without it, a PATCH that omits scheduledAt on an already-queued post would
+  // be read as a draft and skip the minimums it must satisfy.
+  const mergedType = (input.type ?? existing.type) as RulePostType;
+  const mergedCaption =
+    input.caption !== undefined ? (input.caption ?? "") : (existing.caption ?? "");
+  const mergedMediaCount =
+    input.mediaAssetIds !== undefined
+      ? input.mediaAssetIds.length
+      : await prisma.postAsset.count({ where: { postId: id } });
+  const mergedChain =
+    input.replyChain !== undefined
+      ? input.replyChain
+      : (existing.replyChainJson as Array<{ caption?: string; text?: string }> | null);
+
+  const violations = validatePost({
+    type: mergedType,
+    platform: existing.platform,
+    caption: mergedCaption,
+    stage: scheduledAt ? "publish" : "draft",
+    mediaCount: mergedMediaCount,
+    chainItems: Array.isArray(mergedChain)
+      ? mergedChain.map((c) => ({
+          text: (c as { text?: string; caption?: string }).text ??
+            (c as { caption?: string }).caption ?? "",
+          assetCount: ((c as { assetIds?: string[] }).assetIds ?? []).length,
+        }))
+      : undefined,
+  });
+  if (violations.length > 0) {
+    throw new Error(violations.map((v) => v.message).join("; "));
+  }
 
   // Rebuild PostAsset rows if media changed.
   const assetSpecs: AssetMeta[] | undefined = input.assetMetas?.length

@@ -74,14 +74,80 @@ export const VisualSchema = z.object({
 });
 export type Visual = z.infer<typeof VisualSchema>;
 
-// Cadence and policy are stubs in Phase 1 — they get their real shape in
-// Phase 3. Declared now so the column exists and the resolver has something
-// to validate, rather than adding a migration later for a field we already
-// knew we needed.
+// A quiet window in LOCAL wall-clock hours. `endH` may exceed 24 to express a
+// window crossing midnight: {23, 30} is 23:00 today until 06:00 tomorrow, kept
+// as one window rather than two so the overnight sleep is a single interval.
+export const QuietWindowSchema = z
+  .object({
+    startH: z.number().min(0).max(47),
+    endH: z.number().min(0).max(47),
+  })
+  .refine((w) => w.endH > w.startH, {
+    message: "quiet window must end after it starts (use endH > 24 to cross midnight)",
+  });
+export type QuietWindow = z.infer<typeof QuietWindowSchema>;
+
+// An active session, in minutes from local midnight. Dynamic sleep windows are
+// placed inside these; how many and how long stays in AppSettings, because
+// those are knobs you tune weekly rather than facts about the account.
+export const SessionBandSchema = z
+  .object({
+    startMin: z.number().int().min(0).max(1440),
+    endMin: z.number().int().min(0).max(1440),
+  })
+  .refine((b) => b.endMin > b.startMin, { message: "session must end after it starts" });
+export type SessionBand = z.infer<typeof SessionBandSchema>;
+
 export const CadenceSchema = z.object({
+  /** IANA zone. Everything the scheduler does resolves through this. */
   timezone: z.string().max(60).default("Asia/Kolkata"),
+  quietWindows: z.array(QuietWindowSchema).max(12).default([]),
+  morningSession: SessionBandSchema,
+  eveningSession: SessionBandSchema,
 });
 export type Cadence = z.infer<typeof CadenceSchema>;
+
+/**
+ * Reproduces the constants the scheduler used to hardcode, exactly. Used both
+ * as the seed and as the fallback when no profile is loaded.
+ *
+ * Unlike voice, cadence fails OPEN. Replying on a sensible default schedule is
+ * harmless; replying in a default VOICE is not. See profile/resolver.ts.
+ */
+export const DEFAULT_CADENCE: Cadence = {
+  timezone: "Asia/Kolkata",
+  quietWindows: [
+    { startH: 23, endH: 30 }, // 23:00 -> 06:00 next day
+    { startH: 11, endH: 12 },
+    { startH: 14, endH: 16 },
+  ],
+  morningSession: { startMin: 6 * 60, endMin: 11 * 60 },
+  eveningSession: { startMin: 16 * 60, endMin: 24 * 60 },
+};
+
+/**
+ * Safety rail, deliberately NOT configurable: a schedule with no quiet time is
+ * a bot pattern, and the human-cadence defence is the main thing protecting an
+ * irreplaceable account. Preferences live in config; rails live in code.
+ */
+export const MIN_QUIET_HOURS_PER_DAY = 6;
+
+/** Total hours covered by the quiet windows, treating overlaps once. */
+export function quietHoursPerDay(windows: QuietWindow[]): number {
+  const spans = windows
+    .map((w) => [w.startH, w.endH] as const)
+    .sort((a, b) => a[0] - b[0]);
+  let total = 0;
+  let cursor = -Infinity;
+  for (const [start, end] of spans) {
+    const from = Math.max(start, cursor);
+    if (end > from) {
+      total += end - from;
+      cursor = end;
+    }
+  }
+  return total;
+}
 
 export const AUTONOMY_LEVELS = ["off", "suggest", "review", "auto"] as const;
 export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];

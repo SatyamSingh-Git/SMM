@@ -30,7 +30,8 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "tailwind-merge": "^2.5.5",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "@smm/shared": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

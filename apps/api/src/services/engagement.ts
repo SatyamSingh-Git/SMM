@@ -9,7 +9,7 @@ import {
   planReplyTime,
   isOverDailyCap,
   isOverPerPostCap,
-  istDateKey,
+  accountDateKey,
 } from "./reply-schedule.js";
 import { getConfig } from "./runtime-config.js";
 
@@ -279,7 +279,7 @@ async function scanPostsForComments(
       // that same IST day. If the planned fire time spills into the next IST day
       // (e.g. a late-night comment pushed past the 23:00 overnight window), we
       // drop it rather than reply tomorrow. No "ahead", no "backwards".
-      if (istDateKey(fireAtMs) !== istDateKey(nowMs)) {
+      if (accountDateKey(fireAtMs) !== accountDateKey(nowMs)) {
         await prisma.engagementComment.create({
           data: {
             platform: "threads",

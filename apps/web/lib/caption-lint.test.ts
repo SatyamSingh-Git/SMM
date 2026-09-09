@@ -61,43 +61,43 @@ describe("checkHook", () => {
   const long = "x".repeat(200);
 
   it("returns nothing for an empty caption", () => {
-    expect(checkHook("", "instagram", "ig_feed")).toEqual([]);
+    expect(checkHook("", "ig_feed")).toEqual([]);
   });
 
   it("marks a reel hook good under 55 chars", () => {
-    const [badge] = checkHook(short, "instagram", "ig_reel");
+    const [badge] = checkHook(short, "ig_reel");
     expect(badge?.tone).toBe("good");
     expect(badge?.label).toContain("/55");
   });
 
   it("warns when a reel hook passes the 55-char fold", () => {
-    const [badge] = checkHook("y".repeat(56), "instagram", "ig_reel");
+    const [badge] = checkHook("y".repeat(56), "ig_reel");
     expect(badge?.tone).toBe("warn");
   });
 
   it("uses the 125-char fold for feed posts", () => {
-    const [badge] = checkHook(short, "instagram", "ig_feed");
+    const [badge] = checkHook(short, "ig_feed");
     expect(badge?.label).toContain("/125");
   });
 
   it("warns when a feed hook passes 125 chars", () => {
-    expect(checkHook(long, "instagram", "ig_feed")[0]?.tone).toBe("warn");
+    expect(checkHook(long, "ig_feed")[0]?.tone).toBe("warn");
   });
 
   // Threads shows short posts whole, so a length badge there would be noise.
   it("emits no length badge for threads", () => {
-    expect(checkHook(long, "threads", "threads_post").some((b) => b.label.includes("/"))).toBe(
+    expect(checkHook(long, "threads_post").some((b) => b.label.includes("/"))).toBe(
       false
     );
   });
 
   it("flags a bait phrase in the hook on any platform", () => {
-    const labels = checkHook("tag a friend", "threads", "threads_post").map((b) => b.label);
+    const labels = checkHook("tag a friend", "threads_post").map((b) => b.label);
     expect(labels).toContain("bait phrase in hook");
   });
 
   it("only looks at the first line", () => {
-    const [badge] = checkHook(`${short}\n${long}`, "instagram", "ig_feed");
+    const [badge] = checkHook(`${short}\n${long}`, "ig_feed");
     expect(badge?.tone).toBe("good");
   });
 });

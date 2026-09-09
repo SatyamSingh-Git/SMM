@@ -14,10 +14,12 @@
 import { prisma } from "@smm/db";
 import {
   CadenceSchema,
+  DEFAULT_CADENCE,
   IdentitySchema,
   PolicySchema,
   VisualSchema,
   VoiceSchema,
+  type Cadence,
   type Profile,
 } from "./types.js";
 
@@ -119,6 +121,15 @@ export function startProfile(): void {
     void refreshProfile();
   }, 30_000);
   t.unref();
+}
+
+/**
+ * Scheduling config. Unlike the voice accessors this fails OPEN: replying on a
+ * sensible default schedule is harmless, whereas replying in a default VOICE is
+ * not. Cadence is operational config, not identity.
+ */
+export function getCadence(): Cadence {
+  return cached?.cadence ?? DEFAULT_CADENCE;
 }
 
 /**

@@ -15,7 +15,7 @@ import { SYSTEM_PROMPT as REPLY_PROMPT } from "../reply-generator.js";
 import { SYSTEM_PROMPT as STRATEGIST_PROMPT } from "../dashboard-ai.js";
 import { SYSTEM_PROMPT as CAPTION_ANALYST_PROMPT } from "../dashboard-caption-patterns.js";
 import { SYSTEM_PROMPT as COMMENT_ANALYST_PROMPT } from "../dashboard-comment-themes.js";
-import type { Profile } from "./types.js";
+import { DEFAULT_CADENCE, type Profile } from "./types.js";
 
 /** The handle baked into the original constants, replaced by a placeholder. */
 const SEED_HANDLE = "cute_aisha_vibes";
@@ -51,11 +51,7 @@ export function seedProfile(): Profile {
     visual: {
       subjectDescriptor: templatize(BRAND_VOICE_VISUAL_FALLBACK),
     },
-    cadence: {
-      // Matches the constant in reply-schedule.ts. Phase 3 makes the scheduler
-      // actually read this; until then it is recorded, not consumed.
-      timezone: "Asia/Kolkata",
-    },
+    cadence: DEFAULT_CADENCE,
     policy: {
       // Today's effective behaviour, written down. Publishing and replying
       // already run unattended; nothing else exists yet. Phase 3 puts the gate

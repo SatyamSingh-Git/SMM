@@ -56,9 +56,11 @@ describe("CreateBody — caption caps", () => {
 });
 
 describe("CreateBody — carousel bounds", () => {
+  // Scheduled, so these are publish-intent posts and minimums apply.
   const carousel = (n: number) => ({
     ...base,
     type: "ig_carousel" as const,
+    scheduledAt: "2026-09-15T14:30:00.000Z",
     mediaAssetIds: Array.from({ length: n }, (_, i) => `asset_${i}`),
   });
 
@@ -72,6 +74,20 @@ describe("CreateBody — carousel bounds", () => {
     if (!r.success) {
       expect(r.error.issues.some((i) => i.path.includes("mediaAssetIds"))).toBe(true);
     }
+  });
+
+  // An unscheduled post is still being assembled. Blocking a half-built
+  // carousel would mean you cannot save work in progress.
+  it("allows a 1-item carousel while it is still a draft", () => {
+    const { scheduledAt, ...draft } = carousel(1);
+    void scheduledAt;
+    expect(CreateBody.safeParse(draft).success).toBe(true);
+  });
+
+  it("still rejects an over-full carousel even as a draft", () => {
+    const { scheduledAt, ...draft } = carousel(11);
+    void scheduledAt;
+    expect(CreateBody.safeParse(draft).success).toBe(false);
   });
 
   it("does not apply carousel bounds to other post types", () => {
@@ -106,9 +122,23 @@ describe("CreateBody — shape", () => {
         replyChain: items,
       });
     expect(chain([{ text: "one" }, { text: "two" }]).success).toBe(true);
+    // A single filled segment is fine while drafting; the 2-segment minimum
+    // only applies once the chain is scheduled.
     expect(chain([{ assetIds: ["a"] }]).success).toBe(true);
     expect(chain([{}]).success).toBe(false);
     expect(chain([{ text: "   " }]).success).toBe(false);
+  });
+
+  it("requires 2 segments once a chain is scheduled", () => {
+    const scheduled = (items: unknown[]) =>
+      CreateBody.safeParse({
+        ...threads,
+        type: "threads_reply_chain" as const,
+        scheduledAt: "2026-09-15T14:30:00.000Z",
+        replyChain: items,
+      });
+    expect(scheduled([{ text: "only one" }]).success).toBe(false);
+    expect(scheduled([{ text: "one" }, { text: "two" }]).success).toBe(true);
   });
 
   it("caps a reply-chain item at 500 chars", () => {
@@ -139,24 +169,88 @@ describe("CreateBody — shape", () => {
   });
 });
 
-// Documents a real gap rather than asserting desired behaviour: the hard blocks
-// live in CreateBody.superRefine, which PATCH does not run. Editing a queued
-// post can therefore set a Threads caption Meta will reject, or break carousel
-// bounds. Phase 3.3 moves these rules into one shared table used by both; when
-// that lands, these expectations flip to `false` and the tests move up into the
-// CreateBody blocks above.
-describe("UpdateBody — known gap: hard blocks are not enforced on edit", () => {
-  it("currently allows a Threads-length-violating caption through PATCH", () => {
-    expect(UpdateBody.safeParse({ caption: "x".repeat(501) }).success).toBe(true);
+// Closed in Phase 3.3. These previously documented a real gap: the hard blocks
+// lived only in CreateBody.superRefine, so editing a queued post could set a
+// Threads caption Meta will always reject, or break carousel bounds, and the
+// result went straight to the publish queue. Both write paths now run the same
+// shared validator from @smm/shared.
+describe("UpdateBody — hard blocks are enforced on edit too", () => {
+  it("rejects a Threads-length-violating caption through PATCH", () => {
+    expect(
+      UpdateBody.safeParse({ type: "threads_post", caption: "x".repeat(501) }).success
+    ).toBe(false);
   });
 
-  it("currently allows a 1-item carousel through PATCH", () => {
+  it("accepts a Threads caption at the limit", () => {
+    expect(
+      UpdateBody.safeParse({ type: "threads_post", caption: "x".repeat(500) }).success
+    ).toBe(true);
+  });
+
+  it("rejects a 1-item carousel on a scheduled PATCH", () => {
+    expect(
+      UpdateBody.safeParse({
+        type: "ig_carousel",
+        mediaAssetIds: ["only_one"],
+        scheduledAt: "2026-09-15T14:30:00.000Z",
+      }).success
+    ).toBe(false);
+  });
+
+  it("rejects an over-full carousel on any PATCH", () => {
+    expect(
+      UpdateBody.safeParse({
+        type: "ig_carousel",
+        mediaAssetIds: Array.from({ length: 11 }, (_, i) => `a${i}`),
+      }).success
+    ).toBe(false);
+  });
+
+  // The schema sees only the patch, so an unscheduled patch reads as a draft
+  // even if the stored post is queued. updatePost re-runs the same validator
+  // against the MERGED post, which is the authoritative check.
+  it("treats an unscheduled patch as a draft at the schema layer", () => {
     expect(
       UpdateBody.safeParse({ type: "ig_carousel", mediaAssetIds: ["only_one"] }).success
     ).toBe(true);
   });
 
-  it("still enforces the IG 2200 cap it shares with CreateBody", () => {
+  it("accepts a valid carousel through PATCH", () => {
+    expect(
+      UpdateBody.safeParse({ type: "ig_carousel", mediaAssetIds: ["a", "b"] }).success
+    ).toBe(true);
+  });
+
+  it("still enforces the IG 2200 cap", () => {
     expect(UpdateBody.safeParse({ caption: "x".repeat(2201) }).success).toBe(false);
+  });
+
+  // Rules are keyed by post type, so a patch that does not change the type has
+  // nothing type-specific to check. The merged result is re-validated deeper in
+  // updatePost, which knows the row being edited.
+  it("skips type-specific rules when the patch omits the type", () => {
+    expect(UpdateBody.safeParse({ scheduledAt: null }).success).toBe(true);
+  });
+});
+
+describe("CreateBody — rules that only the shared table encoded", () => {
+  it("rejects a caption on an IG story", () => {
+    const r = CreateBody.safeParse({
+      ...base,
+      type: "ig_story",
+      caption: "stories take no caption",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("accepts an IG story with no caption", () => {
+    const { caption, ...rest } = base;
+    void caption;
+    expect(CreateBody.safeParse({ ...rest, type: "ig_story" }).success).toBe(true);
+  });
+
+  it("rejects a post type that does not belong to the platform", () => {
+    const r = CreateBody.safeParse({ ...base, platform: "threads", type: "ig_feed" });
+    expect(r.success).toBe(false);
   });
 });

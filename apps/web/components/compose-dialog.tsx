@@ -38,6 +38,7 @@ import { ensureJpeg } from "@/lib/image-convert";
 import { EmojiPickerButton } from "./emoji-picker-button";
 import { insertAtCursor } from "@/lib/insert-at-cursor";
 import { lintCaption, checkHook } from "@/lib/caption-lint";
+import { CHAIN_ITEM_MAX, PLATFORM_RULES, captionMaxFor } from "@smm/shared";
 import { nextIstSlot, slotLabel } from "@/lib/time";
 
 type Props = {
@@ -64,12 +65,12 @@ const TYPE_CONFIG: Record<
     hint: string;
   }
 > = {
-  ig_feed: { label: "Feed Post", icon: Camera, media: "single-image", captionMax: 2200, chain: false, hint: "Single JPEG." },
-  ig_reel: { label: "Reel", icon: Film, media: "single-video", captionMax: 2200, chain: false, hint: "MP4 (H.264/AAC), ≤90s." },
-  ig_carousel: { label: "Carousel", icon: Images, media: "multi", captionMax: 2200, chain: false, hint: "2–10 images or videos." },
-  ig_story: { label: "Story", icon: Video, media: "single-any", captionMax: 0, chain: false, hint: "Image or video. No caption." },
-  threads_post: { label: "Post", icon: MessageCircle, media: "multi", captionMax: 500, chain: false, hint: "Text up to 500 chars. Optional image, video, or carousel (1–20)." },
-  threads_reply_chain: { label: "Reply Chain", icon: MessageCircle, media: "none", captionMax: 0, chain: true, hint: "Self-reply thread. Each segment can have text and/or media." },
+  ig_feed: { label: "Feed Post", icon: Camera, media: "single-image", captionMax: captionMaxFor("ig_feed"), chain: false, hint: "Single JPEG." },
+  ig_reel: { label: "Reel", icon: Film, media: "single-video", captionMax: captionMaxFor("ig_reel"), chain: false, hint: "MP4 (H.264/AAC), ≤90s." },
+  ig_carousel: { label: "Carousel", icon: Images, media: "multi", captionMax: captionMaxFor("ig_carousel"), chain: false, hint: "2–10 images or videos." },
+  ig_story: { label: "Story", icon: Video, media: "single-any", captionMax: captionMaxFor("ig_story"), chain: false, hint: "Image or video. No caption." },
+  threads_post: { label: "Post", icon: MessageCircle, media: "multi", captionMax: captionMaxFor("threads_post"), chain: false, hint: "Text up to 500 chars. Optional image, video, or carousel (1–20)." },
+  threads_reply_chain: { label: "Reply Chain", icon: MessageCircle, media: "none", captionMax: captionMaxFor("threads_reply_chain"), chain: true, hint: "Self-reply thread. Each segment can have text and/or media." },
 };
 
 const TYPES_BY_PLATFORM: Record<Platform, PostType[]> = {
@@ -399,7 +400,7 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
     [caption, cfg.captionMax]
   );
   const hookBadges = React.useMemo(
-    () => (cfg.captionMax > 0 ? checkHook(caption, platform, type) : []),
+    () => (cfg.captionMax > 0 ? checkHook(caption, type) : []),
     [caption, platform, type, cfg.captionMax]
   );
 
@@ -443,15 +444,19 @@ export function ComposeDialog({ open, onOpenChange, accounts, defaultDate, editi
       return "Reels require an MP4 video.";
     if (cfg.media === "single-any" && media.length === 0) return "Add an image or video.";
     // Carousels need 2-10. Threads single posts use "multi" too but media is optional.
-    if (cfg.media === "multi" && type === "ig_carousel" && media.length < 2)
+    if (
+      cfg.media === "multi" &&
+      type === "ig_carousel" &&
+      media.length < PLATFORM_RULES.ig_carousel.minMedia
+    )
       return "Carousel needs 2–10 items.";
     if (cfg.captionMax > 0 && caption.length > cfg.captionMax)
       return `Caption too long (max ${cfg.captionMax}).`;
     if (cfg.chain) {
       const filled = chain.filter((c) => c.text.trim().length > 0 || c.media.length > 0);
       if (filled.length < 2) return "Chain needs at least 2 segments with text or media.";
-      if (filled.some((c) => c.text.length > 500))
-        return "Each chain item ≤500 chars.";
+      if (filled.some((c) => c.text.length > CHAIN_ITEM_MAX))
+        return `Each chain item ≤${CHAIN_ITEM_MAX} chars.`;
     } else if (type === "threads_post" && !caption.trim() && media.length === 0) {
       return "Add some text or media.";
     } else if (cfg.media === "none" && !caption.trim()) return "Add some text.";
