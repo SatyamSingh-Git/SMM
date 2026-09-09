@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, Camera, LayoutDashboard, Plus, Settings, Sparkles, Wand2 } from "lucide-react";
+import { Calendar, Camera, LayoutDashboard, Plus, Settings, Sparkles, UserCog, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-type Route = "calendar" | "dashboard" | "inspire" | "prompts" | "settings";
+type Route = "calendar" | "dashboard" | "inspire" | "prompts" | "profile" | "settings";
 type Props = { onCompose: () => void; activeRoute?: Route };
 
 export function Sidebar({ onCompose, activeRoute = "calendar" }: Props) {
@@ -36,6 +36,7 @@ export function Sidebar({ onCompose, activeRoute = "calendar" }: Props) {
       route: "prompts",
     },
     { icon: Sparkles, label: "AI Assist", soon: true },
+    { icon: UserCog, label: "Persona", href: "/profile", route: "profile" },
     { icon: Settings, label: "Settings", href: "/settings", route: "settings" },
   ];
 

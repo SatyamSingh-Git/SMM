@@ -1,5 +1,6 @@
 import type { Platform } from "@smm/db";
 import { getConfig } from "./runtime-config.js";
+import { systemPromptFor } from "./prompt/system.js";
 import { getRecentPostsWithLatestInsight } from "./dashboard-analytics.js";
 import { writeCached, type CachedAiPayload } from "./dashboard-cache.js";
 import { thinkingJson } from "./deepseek.js";
@@ -36,7 +37,7 @@ export type CaptionPatternsPayload = {
 
 export type CaptionPatternsResult = CachedAiPayload<CaptionPatternsPayload>;
 
-const SYSTEM_PROMPT = `You're a content analyst for @cute_aisha_vibes — a young Indian female creator (fashion / cute / dance, Threads + Instagram). You'll get her top-engaging and bottom-engaging posts side by side.
+export const SYSTEM_PROMPT = `You're a content analyst for @cute_aisha_vibes — a young Indian female creator (fashion / cute / dance, Threads + Instagram). You'll get her top-engaging and bottom-engaging posts side by side.
 
 Your job: extract CONCRETE patterns the user can act on next post. Not vague advice. Real observations.
 
@@ -119,7 +120,7 @@ Generate the pattern analysis as JSON.`;
   // reasoning. thinkingJson retries to absorb v4-flash's runaway-empty.
   const result = await thinkingJson<CaptionPatternsPayload>({
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPromptFor("dashboardCaptionAnalyst") },
       { role: "user", content: userMsg },
     ],
     temperature: 0.5,

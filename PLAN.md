@@ -132,9 +132,9 @@ Nine phases. Sequenced so each one is independently shippable and leaves the sys
 
 | # | Phase | Effort | Gate to start | Status |
 |---|---|---|---|---|
-| 0 | Safety net | 4–6 d | — | *0.1 ✅ · 0.2 ✅ · 0.3 code done, needs R2 creds · 0.4 needs accounts* |
-| 0.5 | Infra migration to Oracle Cloud | 2–3 d | Phase 0 green | needs both instances |
-| 1 | Config core: identity + voice | 5–7 d | Phase 0.5 cut over | |
+| 0 | Safety net | 4–6 d | — | 0.1 ✅ · 0.2 ✅ · 0.3 code done, needs R2 creds · 0.4 ⏸ needs accounts |
+| 0.5 | Infra migration to Oracle Cloud | 2–3 d | Phase 0 green | ⏸ parked — needs both instances |
+| 1 | Config core: identity + voice | 5–7 d | Phase 0.5 cut over | ✅ **done** |
 | 2 | Visual config + taxonomy as data | 4–5 d | Phase 1 shipped | |
 | 3 | Cadence + policy as data | 4–5 d | Phase 1 shipped | |
 | 4 | Instagram engagement parity | 6–8 d | Phase 3 shipped | |
@@ -297,9 +297,17 @@ This directly retires the Phase 5 concern that a generation OOM takes down publi
 
 ---
 
-## Phase 1 — Config core: identity + voice
+## Phase 1 — Config core: identity + voice — **DONE**
 
-The keystone phase. Everything after depends on it.
+The keystone phase. Everything after depends on it. See [docs/PROFILE.md](docs/PROFILE.md).
+
+Shipped: `Profile` + `ProfileVersion` models and migration; zod types with placeholder validation; a pure composer; a fail-closed resolver; all 9 call sites migrated; `/profile` routes (get, patch, versions, rollback, preview); a Persona page in the web app.
+
+**The migration's proof:** all five voice blocks and the subject descriptor compose **byte-for-byte** back to the constants they replaced. Mutation-verified twice — breaking `{{handle}}` substitution reddens 10 tests, and editing a prompt constant reddens the prefix-cache hash test *and only that test*.
+
+Deviation from the sketch: the old constants were **not** deleted from `src/`. `seed.ts` imports them as the factory default rather than re-typing 200 lines of prompt into a fixture — while both forms exist there must be exactly one copy of the text. The database row is the source of truth once seeded, and seeding is idempotent so a redeploy cannot clobber an edited voice.
+
+Also deferred deliberately: voice blocks stay as prose rather than being atomised into structured fields, because the prose already contains those rules and splitting them now would create two sources of truth for the same rule. Extraction has to remove the rule from the prose in the same commit.
 
 ### 1.1 Schema (0.5 d)
 

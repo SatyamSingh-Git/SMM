@@ -1,5 +1,6 @@
 import { env } from "../env.js";
 import { getConfig } from "./runtime-config.js";
+import { systemPromptFor } from "./prompt/system.js";
 
 // Two providers, two specialized jobs:
 //   - OpenRouter / Qwen3-VL  -> VISION ONLY. Looks at an image and produces a
@@ -561,7 +562,7 @@ Return STRICT JSON:
 
   const raw = await deepseekChat({
     messages: [
-      { role: "system", content: BRAND_VOICE },
+      { role: "system", content: systemPromptFor("caption") },
       { role: "user", content: userText },
     ],
     temperature: 0.95,
@@ -610,7 +611,7 @@ Return STRICT JSON: {"tags":["...","...","...","...","..."]}`;
 
   const raw = await deepseekChat({
     messages: [
-      { role: "system", content: BRAND_VOICE },
+      { role: "system", content: systemPromptFor("caption") },
       { role: "user", content: userText },
     ],
     temperature: 0.8,
@@ -654,7 +655,7 @@ Return STRICT JSON: {"hooks":["...","...","..."]}`;
 
   const raw = await deepseekChat({
     messages: [
-      { role: "system", content: BRAND_VOICE },
+      { role: "system", content: systemPromptFor("caption") },
       { role: "user", content: userText },
     ],
     temperature: 0.95,

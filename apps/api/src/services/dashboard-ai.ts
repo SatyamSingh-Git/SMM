@@ -1,5 +1,6 @@
 import type { Platform } from "@smm/db";
 import { getConfig } from "./runtime-config.js";
+import { systemPromptFor } from "./prompt/system.js";
 import {
   getKpis,
   getRecentPostsWithLatestInsight,
@@ -46,7 +47,7 @@ export type DashboardAiInsights = {
   };
 };
 
-const SYSTEM_PROMPT = `You are a content strategist for @cute_aisha_vibes — a young Indian female fashion / cute / dance / vibes creator on Instagram + Threads.
+export const SYSTEM_PROMPT = `You are a content strategist for @cute_aisha_vibes — a young Indian female fashion / cute / dance / vibes creator on Instagram + Threads.
 
 Audience: young Indian males 18-25. Goal: replies, saves, shares, profile visits, viral reach.
 
@@ -152,7 +153,7 @@ Now generate the dashboard insights JSON.`;
 
   const result = await thinkingJson<Partial<DashboardAiInsights>>({
     messages: [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPromptFor("dashboardStrategist") },
       { role: "user", content: userMsg },
     ],
     temperature: 0.7,

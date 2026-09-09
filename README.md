@@ -7,6 +7,7 @@ This README is the map. The deep docs live in [`docs/`](./docs):
 - **[docs/SCHEDULING.md](./docs/SCHEDULING.md)** — the content calendar, the composer, media upload, AI caption assist, and how a post goes from draft → published.
 - **[docs/DASHBOARD.md](./docs/DASHBOARD.md)** — every analytics card, where its numbers come from, and the insights AI layer.
 - **[docs/AGENTS.md](./docs/AGENTS.md)** — the autonomous Threads auto-reply system (Stage 2): polling, the persona, scheduling, safety rules, and the kill switch.
+- **[docs/PROFILE.md](./docs/PROFILE.md)** — the Profile: who the account is, kept in the database instead of the code. Voice, identity, placeholders, versioning, and the fail-closed rule.
 - **[docs/TESTING.md](./docs/TESTING.md)** — the test suite, what it pins, how each suite was mutation-verified, and the gaps that are known rather than solved.
 - **[docs/BACKUPS.md](./docs/BACKUPS.md)** — encrypted `pg_dump` to R2: scheduling, retention, and how to restore without any SMM code running.
 - **[PLAN.md](./PLAN.md)** — the roadmap to a fully autonomous, fully configurable product. Phase status lives there.

@@ -5,7 +5,7 @@ import {
   generateCarouselCompanion,
   getOptionCatalog,
 } from "../services/image-prompts.js";
-import { BRAND_VOICE_VISUAL_FALLBACK } from "../services/ai.js";
+import { subjectDescriptor } from "../services/prompt/system.js";
 
 const Body = z.object({
   scene: z.string().min(2).max(500),
@@ -139,7 +139,7 @@ export async function registerImagePromptRoutes(
 
   // GET /ai/image-prompts/persona — default persona descriptor for the UI.
   app.get("/ai/image-prompts/persona", async () => {
-    return { defaultPersona: BRAND_VOICE_VISUAL_FALLBACK };
+    return { defaultPersona: subjectDescriptor() };
   });
 
   // GET /ai/image-prompts/options — chip catalog for the UI. Single source of

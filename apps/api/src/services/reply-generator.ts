@@ -1,6 +1,7 @@
 import { prisma } from "@smm/db";
 import { logDeepseekCache } from "./ai.js";
 import { getConfig } from "./runtime-config.js";
+import { trySystemPromptFor } from "./prompt/system.js";
 
 // Reply generator with a SKIP signal. If the model is unsure or the comment
 // doesn't deserve an in-voice reply (creepy, spam, single-emoji, language we
@@ -8,7 +9,7 @@ import { getConfig } from "./runtime-config.js";
 
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 
-const SYSTEM_PROMPT = `You ARE @cute_aisha_vibes — a 19-21 year old Indian girl on Threads. You are typing. Not narrating.
+export const SYSTEM_PROMPT = `You ARE @cute_aisha_vibes — a 19-21 year old Indian girl on Threads. You are typing. Not narrating.
 
 DEFAULT PERSONALITY (this is your baseline before any few-shot examples refine it).
 The four traits to lean HARD into: highly flirty, cute, soft, naughty. The reply
@@ -222,6 +223,19 @@ export async function generateThreadsReply(opts: {
     throw new Error("DEEPSEEK_API_KEY not configured");
   }
 
+  // Fail CLOSED. This is the one path that publishes unattended, so a profile
+  // that has not loaded yet must SKIP, never fall back to a built-in voice —
+  // a skipped reply is recoverable, a reply published in the wrong voice is
+  // not. The comment stays in the queue and the next tick picks it up.
+  const systemPrompt = trySystemPromptFor("reply");
+  if (!systemPrompt) {
+    return {
+      shouldReply: false,
+      reply: null,
+      reason: "profile not loaded — skipped rather than reply in a default voice",
+    };
+  }
+
   // Few-shot from her actual past replies. Random sample of up to 18 keeps
   // the prompt cheap while still showing the voice.
   const total = await prisma.styleExample.count({ where: { platform: "threads" } });
@@ -262,7 +276,7 @@ JSON only:`;
   // First attempt: strict JSON mode. Works for most comments but DeepSeek
   // occasionally "stalls" on short emoji-heavy / Devanagari inputs and
   // returns an empty string. We catch that and retry once below.
-  const raw = await callDeepseek({ jsonMode: true, userMsg, temperature: 0.85 });
+  const raw = await callDeepseek({ jsonMode: true, userMsg, temperature: 0.85, systemPrompt });
   const first = parseDecision(raw);
   if (first.shouldReply || (first.reason && !needsRetry(first.reason))) {
     return first;
@@ -278,6 +292,7 @@ JSON only:`;
       userMsg +
       '\n\n(Reminder: respond with one JSON object only, no prose. Schema: {"shouldReply": true/false, "reply": "...", "reason": null})',
     temperature: 0.95,
+    systemPrompt,
   });
   const second = parseDecision(retryRaw);
   // If the retry also failed, return the first decision (preserves original
@@ -304,6 +319,7 @@ async function callDeepseek(opts: {
   jsonMode: boolean;
   userMsg: string;
   temperature: number;
+  systemPrompt: string;
 }): Promise<string> {
   const res = await fetch(DEEPSEEK_URL, {
     method: "POST",
@@ -314,7 +330,7 @@ async function callDeepseek(opts: {
     body: JSON.stringify({
       model: getConfig().deepseekModel,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: opts.systemPrompt },
         { role: "user", content: opts.userMsg },
       ],
       temperature: opts.temperature,

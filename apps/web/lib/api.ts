@@ -90,6 +90,29 @@ export const api = {
       `/accounts/${accountId}/refresh-token`,
       { method: "POST" }
     ),
+  getProfile: () => request<import("./types").ProfileView>("/profile"),
+  updateProfile: (patch: import("./types").ProfilePatch) =>
+    request<import("./types").ProfileView>("/profile", {
+      method: "PATCH",
+      json: patch,
+    }),
+  profileVersions: () =>
+    request<{ versions: import("./types").ProfileVersionRow[] }>(
+      "/profile/versions"
+    ).then((r) => r.versions),
+  rollbackProfile: (version: number) =>
+    request<import("./types").ProfileView>(`/profile/rollback/${version}`, {
+      method: "POST",
+    }),
+  previewPrompt: (body: {
+    task: import("./types").VoiceTask;
+    voice?: string;
+    identity?: Partial<import("./types").ProfileIdentity>;
+  }) =>
+    request<{ composed: string; chars: number }>("/profile/preview", {
+      method: "POST",
+      json: body,
+    }),
   getPost: (id: string) => request<Post>(`/posts/${id}`),
   restorePost: (id: string) =>
     request<Post>(`/posts/${id}/restore`, { method: "POST" }),

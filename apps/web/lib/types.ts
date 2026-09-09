@@ -307,3 +307,52 @@ export type EngagementComment = {
 // "What to Write" — a post idea generated in the creator's voice, inspired by
 // another post. Same shape as a caption suggestion (caption + optional hashtags).
 export type InspireSuggestion = { caption: string; hashtags: string[] };
+
+// ---------- Profile (the config core; see PLAN.md Phase 1) ----------
+
+export type ProfileIdentity = {
+  handle: string;
+  displayName: string;
+  pronouns: string;
+  ageBand: string;
+  nationality: string;
+  locale: string;
+  languages: string[];
+  niche: string;
+  audience: string;
+};
+
+export type VoiceTask =
+  | "caption"
+  | "reply"
+  | "dashboardStrategist"
+  | "dashboardCaptionAnalyst"
+  | "dashboardCommentAnalyst";
+
+export type ProfileVoice = Record<VoiceTask, string>;
+
+export type ProfileView = {
+  id: string;
+  name: string;
+  version: number;
+  identity: ProfileIdentity;
+  voice: ProfileVoice;
+  visual: { subjectDescriptor: string };
+  cadence: { timezone: string };
+  policy: { autonomy: Record<string, string> };
+  updatedAt?: string;
+};
+
+export type ProfilePatch = {
+  name?: string;
+  identity?: Partial<ProfileIdentity>;
+  voice?: Partial<ProfileVoice>;
+  visual?: Partial<{ subjectDescriptor: string }>;
+  note?: string;
+};
+
+export type ProfileVersionRow = {
+  version: number;
+  note: string | null;
+  createdAt: string;
+};

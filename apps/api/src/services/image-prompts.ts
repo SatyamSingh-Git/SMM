@@ -13,10 +13,9 @@
 
 import {
   IMAGE_PROMPT_SYSTEM,
-  BRAND_VOICE_VISUAL_FALLBACK,
-  BRAND_VOICE,
   deepseekChat,
 } from "./ai.js";
+import { systemPromptFor, subjectDescriptor } from "./prompt/system.js";
 
 export type ImagePromptOpts = {
   scene: string;
@@ -595,7 +594,7 @@ export async function generateImagePrompts(
   const scene = opts.scene.trim();
   if (!scene) throw new Error("scene is required");
   const persona =
-    opts.personaDescriptor?.trim() || BRAND_VOICE_VISUAL_FALLBACK;
+    opts.personaDescriptor?.trim() || subjectDescriptor();
   const n = Math.max(1, Math.min(opts.count ?? 3, 6));
 
   const directorsNotes = buildDirectorsNotes(opts);
@@ -678,7 +677,7 @@ The "slides" array MUST have exactly ${slides.length} items in order.`;
 
   const raw = await deepseekChat({
     messages: [
-      { role: "system", content: BRAND_VOICE },
+      { role: "system", content: systemPromptFor("caption") },
       { role: "user", content: userText },
     ],
     temperature: 0.9,

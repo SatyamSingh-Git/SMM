@@ -20,6 +20,7 @@ import {
   formatDynamicSleepWindowsToday,
 } from "./services/reply-schedule.js";
 import { getConfig } from "./services/runtime-config.js";
+import { startProfile } from "./services/profile/resolver.js";
 
 // Reply runner cadence. We deliberately go slower than Meta's published 1000
 // replies/24h cap — what matters for anti-spam is the BURST rate, not the
@@ -396,6 +397,11 @@ function replyTick(): void {
   // and never throws. Deliberately not awaited — it must not delay a reply.
   void maybeRunBackup();
 }
+
+// In prod the API process hosts this worker and has already primed the
+// profile; in dev the worker runs standalone and must prime its own. Idempotent
+// either way. Until it loads, the reply generator skips rather than guesses.
+startProfile();
 
 const replyPoll = setInterval(replyTick, REPLY_POLL_MS);
 replyPoll.unref();

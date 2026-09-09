@@ -4,14 +4,14 @@
 // a spark and write BRAND-NEW posts in the creator's own voice, reusing the
 // exact same pipeline the caption assistant already uses:
 //   describeImage()  -> OpenRouter / Qwen3-VL vision (optional, if image given)
-//   deepseekChat()   -> DeepSeek writer with the shared BRAND_VOICE
+//   deepseekChat()   -> DeepSeek writer with the profile's caption voice
 //
 // This file adds NOTHING to the existing caption flow — it only imports the
 // already-exported helpers from ai.ts and feeds them a different prompt.
 
 import { getConfig } from "./runtime-config.js";
+import { systemPromptFor } from "./prompt/system.js";
 import {
-  BRAND_VOICE,
   deepseekChat,
   describeImage,
   type CaptionSuggestion,
@@ -95,7 +95,7 @@ Return STRICT JSON:
 
   const raw = await deepseekChat({
     messages: [
-      { role: "system", content: BRAND_VOICE },
+      { role: "system", content: systemPromptFor("caption") },
       { role: "user", content: userText },
     ],
     temperature: 0.95,

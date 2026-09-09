@@ -15,8 +15,10 @@ import { registerEngagementRoutes } from "./routes/engagement.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerProfileRoutes } from "./routes/profile.js";
 import { ensureAccountsFromEnv } from "./services/accounts.js";
 import { startRuntimeConfig } from "./services/runtime-config.js";
+import { startProfile } from "./services/profile/resolver.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -41,9 +43,13 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerDashboardRoutes(app);
   await registerSettingsRoutes(app);
   await registerAdminRoutes(app);
+  await registerProfileRoutes(app);
 
   // Prime the runtime-config cache (idempotent; also self-primes on import).
   startRuntimeConfig();
+  // Seed the default profile if missing, then prime its cache. Unlike
+  // runtime-config this fails closed — see services/profile/resolver.ts.
+  startProfile();
 
   // Seed/refresh accounts from env tokens on boot. Non-fatal if it fails
   // (e.g. token expired) — the API still serves other endpoints.
