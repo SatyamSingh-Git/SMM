@@ -8,7 +8,18 @@ FROM node:20-slim
 
 # pnpm via corepack (shipped with Node 20). Add OpenSSL + curl explicitly
 # even on slim (some Prisma versions still probe for it).
-RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+# openssl/ca-certificates: Prisma. gnupg: symmetric encryption of DB backups.
+# postgresql-client-17 comes from PGDG, NOT Debian: bookworm ships client 15,
+# and pg_dump refuses to dump a server newer than itself — against a PG 16/17
+# Supabase instance the Debian client fails with a version-mismatch error.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      openssl ca-certificates gnupg curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+         -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+         > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 

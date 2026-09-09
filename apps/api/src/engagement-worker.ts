@@ -11,6 +11,7 @@ import { generateThreadsReply } from "./services/reply-generator.js";
 import { pollForNewComments, pollHotPosts } from "./services/engagement.js";
 import { learnThreadsStyle } from "./services/style-learning.js";
 import { backfillFromPlatforms } from "./services/backfill.js";
+import { maybeRunBackup } from "./services/db-backup.js";
 import {
   isOverDailyCap,
   isOverPerPostCap,
@@ -390,6 +391,10 @@ function replyTick(): void {
   processDueReplies()
     .catch((e) => console.error("[engage] reply poll error:", (e as Error).message))
     .finally(() => { replyProcessing = false; });
+  // Backups ride the tick rather than their own setInterval, so a host restart
+  // re-checks immediately instead of silently skipping a day. Self-throttled
+  // and never throws. Deliberately not awaited — it must not delay a reply.
+  void maybeRunBackup();
 }
 
 const replyPoll = setInterval(replyTick, REPLY_POLL_MS);

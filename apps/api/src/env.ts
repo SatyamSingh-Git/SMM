@@ -54,6 +54,22 @@ const Env = z.object({
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_PUBLIC_URL_BASE: z.string().optional(),
 
+  // Encrypted Postgres backups to Cloudflare R2 (see services/db-backup.ts).
+  // Disabled until all five values are present — a half-configured backup that
+  // silently no-ops is worse than none, so maybeRunBackup logs when enabled
+  // without credentials.
+  BACKUP_ENABLED: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true"),
+  BACKUP_R2_ENDPOINT: z.string().url().optional(),
+  BACKUP_R2_BUCKET: z.string().optional(),
+  BACKUP_R2_ACCESS_KEY_ID: z.string().optional(),
+  BACKUP_R2_SECRET_ACCESS_KEY: z.string().optional(),
+  // gpg symmetric passphrase. Losing this loses every backup — store it
+  // somewhere that is NOT this database.
+  BACKUP_PASSPHRASE: z.string().optional(),
+
   KILL_SWITCH: z
     .string()
     .default("false")

@@ -58,7 +58,7 @@ const ChainItem = z
     { message: "Each chain item needs text or media" }
   );
 
-const CreateBody = z
+export const CreateBody = z
   .object({
     accountId: z.string().min(1),
     platform: Platform,
@@ -97,7 +97,7 @@ const CreateBody = z
   });
 
 // PATCH /posts/:id — everything optional. AccountId/platform are immutable.
-const UpdateBody = z.object({
+export const UpdateBody = z.object({
   type: PostType.optional(),
   caption: z.string().max(2200).nullish(),
   mediaAssetIds: z.array(z.string()).optional(),

@@ -14,6 +14,7 @@ import { registerLocationRoutes } from "./routes/locations.js";
 import { registerEngagementRoutes } from "./routes/engagement.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { ensureAccountsFromEnv } from "./services/accounts.js";
 import { startRuntimeConfig } from "./services/runtime-config.js";
 
@@ -39,6 +40,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerEngagementRoutes(app);
   await registerDashboardRoutes(app);
   await registerSettingsRoutes(app);
+  await registerAdminRoutes(app);
 
   // Prime the runtime-config cache (idempotent; also self-primes on import).
   startRuntimeConfig();
