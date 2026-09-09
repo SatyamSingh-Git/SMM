@@ -131,7 +131,9 @@ async function processOneReply(commentId: string): Promise<void> {
     // regardless of age. Persona-level skip rules (contact / explicit /
     // AI probe) still apply via the reply generator. The daily cap is the
     // only volume-control left.
-    if (await isOverDailyCap()) {
+    // Exclude THIS comment (already "replying") from the count so the cap is an
+    // exact boundary, not off-by-one.
+    if (await isOverDailyCap(commentId)) {
       await prisma.engagementComment.update({
         where: { id: commentId },
         data: { status: "skipped", lastError: "daily cap reached at send time" },
@@ -140,8 +142,12 @@ async function processOneReply(commentId: string): Promise<void> {
       return;
     }
 
-    // Per-post cap re-check at send time (mirrors the daily-cap double-check).
-    if (comment.platformPostId && (await isOverPerPostCap(comment.platformPostId))) {
+    // Per-post cap re-check at send time (mirrors the daily-cap double-check),
+    // also excluding this in-flight comment from its own count.
+    if (
+      comment.platformPostId &&
+      (await isOverPerPostCap(comment.platformPostId, commentId))
+    ) {
       await prisma.engagementComment.update({
         where: { id: commentId },
         data: { status: "skipped", lastError: "per-post cap reached at send time" },

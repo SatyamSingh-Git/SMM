@@ -310,38 +310,53 @@ export function planReplyTime(nowMs: number = Date.now()): {
 /**
  * Count replies committed for today (IST). Counts queued + replying + replied
  * so we never overshoot the cap with in-flight comments.
+ *
+ * excludeCommentId: at SEND time the comment being processed is already flipped
+ * to "replying", so it's inside this count. Pass its id to exclude it — then the
+ * check measures OTHER committed replies and the comparison stays an exact
+ * "< cap" boundary (otherwise the in-flight comment double-counts itself and we
+ * lose one reply at the exact cap).
  */
-export async function todaysReplyCount(): Promise<number> {
+export async function todaysReplyCount(excludeCommentId?: string): Promise<number> {
   const dayStart = new Date(istDayStartUtcMs(Date.now()));
   return prisma.engagementComment.count({
     where: {
       receivedAt: { gte: dayStart },
       status: { in: ["queued", "replying", "replied"] },
+      ...(excludeCommentId ? { id: { not: excludeCommentId } } : {}),
     },
   });
 }
 
-export async function isOverDailyCap(): Promise<boolean> {
-  const n = await todaysReplyCount();
+export async function isOverDailyCap(excludeCommentId?: string): Promise<boolean> {
+  const n = await todaysReplyCount(excludeCommentId);
   return n >= getConfig().dailyReplyCap;
 }
 
 /**
  * Count committed replies for ONE post today (IST). Same semantics as
- * todaysReplyCount but scoped to a single platformPostId.
+ * todaysReplyCount but scoped to a single platformPostId. See excludeCommentId
+ * note above.
  */
-export async function postReplyCountToday(platformPostId: string): Promise<number> {
+export async function postReplyCountToday(
+  platformPostId: string,
+  excludeCommentId?: string
+): Promise<number> {
   const dayStart = new Date(istDayStartUtcMs(Date.now()));
   return prisma.engagementComment.count({
     where: {
       platformPostId,
       receivedAt: { gte: dayStart },
       status: { in: ["queued", "replying", "replied"] },
+      ...(excludeCommentId ? { id: { not: excludeCommentId } } : {}),
     },
   });
 }
 
-export async function isOverPerPostCap(platformPostId: string): Promise<boolean> {
-  const n = await postReplyCountToday(platformPostId);
+export async function isOverPerPostCap(
+  platformPostId: string,
+  excludeCommentId?: string
+): Promise<boolean> {
+  const n = await postReplyCountToday(platformPostId, excludeCommentId);
   return n >= getConfig().perPostReplyCap;
 }
