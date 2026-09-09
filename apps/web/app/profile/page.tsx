@@ -14,6 +14,7 @@ import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { StyleTaxonomy } from "@/components/style-taxonomy";
 
 // Everything the account IS — handle, voice, look — lives here rather than in
 // the code. Editing a voice block changes what gets published, so each section
@@ -48,7 +49,7 @@ const VOICE_BLOCKS: Array<{ task: VoiceTask; title: string; subtitle: string }> 
   },
 ];
 
-type Section = "identity" | "visual" | VoiceTask;
+type Section = "identity" | "visual" | "toneBias" | VoiceTask;
 
 export default function ProfilePage() {
   const qc = useQueryClient();
@@ -203,6 +204,28 @@ export default function ProfilePage() {
           }
         />
       </SectionCard>
+
+      <SectionCard
+        title="Tone bias"
+        subtitle="Appended to every image prompt when “default personality” is on in the composer. Leave it empty to omit the block entirely."
+      >
+        <TextArea
+          rows={10}
+          value={draft.visual.toneBias}
+          onChange={(v) =>
+            setDraft({ ...draft, visual: { ...draft.visual, toneBias: v } })
+          }
+        />
+        <SaveRow
+          pending={pending === "toneBias"}
+          saved={savedSection === "toneBias"}
+          onSave={() =>
+            save.mutate({ section: "toneBias", patch: { visual: draft.visual } })
+          }
+        />
+      </SectionCard>
+
+      <StyleTaxonomy />
 
       <SectionCard
         title="History"

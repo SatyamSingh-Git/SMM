@@ -337,7 +337,7 @@ export type ProfileView = {
   version: number;
   identity: ProfileIdentity;
   voice: ProfileVoice;
-  visual: { subjectDescriptor: string };
+  visual: { subjectDescriptor: string; toneBias: string };
   cadence: { timezone: string };
   policy: { autonomy: Record<string, string> };
   updatedAt?: string;
@@ -347,7 +347,7 @@ export type ProfilePatch = {
   name?: string;
   identity?: Partial<ProfileIdentity>;
   voice?: Partial<ProfileVoice>;
-  visual?: Partial<{ subjectDescriptor: string }>;
+  visual?: Partial<{ subjectDescriptor: string; toneBias: string }>;
   note?: string;
 };
 
@@ -355,4 +355,20 @@ export type ProfileVersionRow = {
   version: number;
   note: string | null;
   createdAt: string;
+};
+
+export type StyleOptionRow = {
+  id: string;
+  dimension: string;
+  key: string;
+  label: string;
+  promptText: string;
+  enabled: boolean;
+  sortOrder: number;
+  conflictsWith: string[];
+};
+
+export type StyleOptionsView = {
+  dimensions: string[];
+  byDimension: Record<string, StyleOptionRow[]>;
 };

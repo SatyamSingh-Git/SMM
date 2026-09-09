@@ -135,7 +135,7 @@ Nine phases. Sequenced so each one is independently shippable and leaves the sys
 | 0 | Safety net | 4–6 d | — | 0.1 ✅ · 0.2 ✅ · 0.3 code done, needs R2 creds · 0.4 ⏸ needs accounts |
 | 0.5 | Infra migration to Oracle Cloud | 2–3 d | Phase 0 green | ⏸ parked — needs both instances |
 | 1 | Config core: identity + voice | 5–7 d | Phase 0.5 cut over | ✅ **done** |
-| 2 | Visual config + taxonomy as data | 4–5 d | Phase 1 shipped | |
+| 2 | Visual config + taxonomy as data | 4–5 d | Phase 1 shipped | ✅ **done** |
 | 3 | Cadence + policy as data | 4–5 d | Phase 1 shipped | ✅ **done** |
 | 4 | Instagram engagement parity | 6–8 d | Phase 3 shipped | |
 | 5 | Media generation pipeline | 6–8 d | Phase 2 shipped | |
@@ -382,7 +382,17 @@ Two things the UI must do that a naive form would not:
 
 ---
 
-## Phase 2 — Visual config + taxonomy as data
+## Phase 2 — Visual config + taxonomy as data — **DONE**
+
+See [docs/VISUAL-STYLE.md](docs/VISUAL-STYLE.md). Shipped: the `StyleOption` model and migration; the eight hardcoded key unions extracted to `image-prompt-options.ts` as the factory default and seeded per-dimension; a cache with built-in fallback; the generator and catalog reading from it; CRUD routes with soft delete and restore-defaults; the tone-bias block moved into `profile.visual.toneBias`; a taxonomy editor on the Persona page that can add whole new axes.
+
+`dimension` is a free string, so adding an axis is a data insert rather than a migration — the difference between configurable and merely parameterized.
+
+**A trap found and fixed while doing it.** Adding `toneBias` with a zod `.default("")` would have silently switched the block off for the already-seeded profile row: parses fine, reads as empty, stops being emitted, no error anywhere. `backfillProfileDefaults()` fills fields added after seeding, keyed on the field being *absent* rather than empty so a deliberately cleared value is respected. Any future profile field needs the same treatment.
+
+Mutation-verified on the two properties that keep old drafts working: resolving a removed key to a string instead of `null` reddens 2 tests, and accepting an empty table instead of keeping the built-ins reddens 1.
+
+## Phase 2 (original plan) — Visual config + taxonomy as data
 
 ### 2.1 Taxonomy to the database (2 d)
 

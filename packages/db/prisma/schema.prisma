@@ -380,3 +380,34 @@ model ProfileVersion {
   @@unique([profileId, version])
   @@index([profileId, createdAt])
 }
+
+// One selectable value on one visual dimension — an outfit, a locale, a
+// lighting setup. `dimension` is a free string, not an enum, so adding a whole
+// new axis ("prop", "season", "mood") is a data insert rather than a migration.
+// That is the difference between configurable and merely parameterized.
+//
+// Seeded from the constants that used to be hardcoded in
+// services/image-prompts.ts. Read through services/style-options.ts, which
+// caches and falls back to those constants until the rows load.
+model StyleOption {
+  id            String   @id @default(cuid())
+  profileId     String
+  // "outfit" | "shotType" | "cameraQuality" | "photographer" | "cameraAngle"
+  // | "locale" | "lighting" | "hairstyle" | anything you add.
+  dimension     String
+  // Stable slug referenced by saved drafts. Never reuse one for a new meaning.
+  key           String
+  label         String
+  // The photography-direction language fed verbatim to the model.
+  promptText    String
+  // Soft delete. A key still referenced by a saved draft must never be hard
+  // deleted, or the draft resolves to nothing.
+  enabled       Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  // Keys on other dimensions that contradict this one ("indoor studio" vs
+  // "golden hour"). Advisory: the UI greys them out, generation does not block.
+  conflictsWith String[] @default([])
+
+  @@unique([profileId, dimension, key])
+  @@index([profileId, dimension, enabled])
+}

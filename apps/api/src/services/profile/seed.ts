@@ -15,6 +15,7 @@ import { SYSTEM_PROMPT as REPLY_PROMPT } from "../reply-generator.js";
 import { SYSTEM_PROMPT as STRATEGIST_PROMPT } from "../dashboard-ai.js";
 import { SYSTEM_PROMPT as CAPTION_ANALYST_PROMPT } from "../dashboard-caption-patterns.js";
 import { SYSTEM_PROMPT as COMMENT_ANALYST_PROMPT } from "../dashboard-comment-themes.js";
+import { DEFAULT_TONE_BIAS } from "../image-prompt-options.js";
 import { DEFAULT_CADENCE, type Profile } from "./types.js";
 
 /** The handle baked into the original constants, replaced by a placeholder. */
@@ -50,6 +51,7 @@ export function seedProfile(): Profile {
     },
     visual: {
       subjectDescriptor: templatize(BRAND_VOICE_VISUAL_FALLBACK),
+      toneBias: templatize(DEFAULT_TONE_BIAS),
     },
     cadence: DEFAULT_CADENCE,
     policy: {

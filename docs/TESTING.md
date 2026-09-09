@@ -9,7 +9,7 @@ pnpm test:watch    # watch mode
 
 Config lives in [vitest.config.mts](../vitest.config.mts). Everything runs in a `node` environment against `apps/**/*.test.ts` and `packages/**/*.test.ts`. **No test touches Postgres, Meta, R2, or DeepSeek** — suites that import a module with those dependencies stub them.
 
-**293 tests across 13 files.**
+**321 tests across 15 files.**
 
 ## What is covered
 
@@ -28,6 +28,8 @@ Config lives in [vitest.config.mts](../vitest.config.mts). Everything runs in a 
 | [resolver.test.ts](../apps/api/src/services/profile/resolver.test.ts) | 13 | the fail-closed profile rule, seeding idempotence |
 | [platform-rules.test.ts](../packages/shared/src/platform-rules.test.ts) | 31 | caption caps, media bounds, draft vs publish, mime rules |
 | [autonomy.test.ts](../apps/api/src/services/autonomy.test.ts) | 18 | per-stage levels, defaults, level-to-behaviour mapping |
+| [style-options.test.ts](../apps/api/src/services/style-options.test.ts) | 18 | taxonomy fallback, soft deletes, null resolution, custom dimensions |
+| [image-prompts.test.ts](../apps/api/src/services/image-prompts.test.ts) | 6 | the option catalog the composer renders |
 
 ## The two tests that matter most
 
@@ -52,6 +54,8 @@ A test that cannot fail proves nothing. Every suite here has been mutation-check
 | one character changed in a prompt constant | 1 failure (the cache-bust hash, and only it) |
 | dynamic sleep windows via `local midnight + N minutes` | 1 failure (the DST test) |
 | carousel upper bound removed from the shared table | 3 failures |
+| removed style key resolves to a string instead of `null` | 2 failures |
+| empty style table accepted instead of keeping the built-ins | 1 failure |
 
 When you add a suite, do this once before trusting it. It is how the `fetchPostInsights` metric test was caught passing for the wrong reason — the stub was JSON-serializing a `Response` object instead of failing the request, so the `try`/`catch` under test never ran.
 

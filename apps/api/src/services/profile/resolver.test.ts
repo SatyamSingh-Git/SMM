@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findUnique = vi.fn();
 const create = vi.fn();
+const update = vi.fn();
 vi.mock("@smm/db", () => ({
   prisma: {
     profile: {
       findUnique: (...a: unknown[]) => findUnique(...a),
       create: (...a: unknown[]) => create(...a),
+      update: (...a: unknown[]) => update(...a),
     },
     appSettings: { upsert: vi.fn(async () => ({})) },
   },
@@ -14,6 +16,7 @@ vi.mock("@smm/db", () => ({
 
 import {
   __setProfileForTests,
+  backfillProfileDefaults,
   ensureProfileSeeded,
   getProfile,
   parseProfileRow,
@@ -42,6 +45,7 @@ beforeEach(() => {
   __setProfileForTests(null);
   findUnique.mockReset();
   create.mockReset();
+  update.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => undefined);
   vi.spyOn(console, "log").mockImplementation(() => undefined);
 });
@@ -136,5 +140,43 @@ describe("seeding", () => {
     findUnique.mockResolvedValue(row());
     await ensureProfileSeeded();
     expect(create).not.toHaveBeenCalled();
+  });
+});
+
+// A field added to the schema after the row was seeded reads as its zod
+// default, which for toneBias means the block it controls silently stops being
+// emitted — no error, no log, just a quietly different prompt. This is the
+// forward-fill that stops that happening again.
+describe("backfilling fields added after seeding", () => {
+  it("fills toneBias when the key is absent", async () => {
+    findUnique.mockResolvedValue(row({ visualJson: { subjectDescriptor: "d" } }));
+    await backfillProfileDefaults();
+    expect(update).toHaveBeenCalledTimes(1);
+    const data = update.mock.calls[0]![0].data.visualJson;
+    expect(data.subjectDescriptor).toBe("d");
+    expect(data.toneBias.length).toBeGreaterThan(0);
+  });
+
+  // Present-but-empty means the user cleared it on purpose.
+  it("respects a deliberately emptied toneBias", async () => {
+    findUnique.mockResolvedValue(
+      row({ visualJson: { subjectDescriptor: "d", toneBias: "" } })
+    );
+    await backfillProfileDefaults();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the field is already set", async () => {
+    findUnique.mockResolvedValue(
+      row({ visualJson: { subjectDescriptor: "d", toneBias: "mine" } })
+    );
+    await backfillProfileDefaults();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when there is no profile row yet", async () => {
+    findUnique.mockResolvedValue(null);
+    await backfillProfileDefaults();
+    expect(update).not.toHaveBeenCalled();
   });
 });

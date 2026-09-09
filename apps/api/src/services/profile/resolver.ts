@@ -86,6 +86,32 @@ export async function ensureProfileSeeded(): Promise<void> {
   console.log("[profile] seeded default profile from built-in constants");
 }
 
+/**
+ * Fill in fields added to the schema after a profile was already seeded.
+ *
+ * Without this, adding a field with a zod `.default("")` silently switches the
+ * behaviour off for anyone whose row predates it: the row parses fine, the new
+ * field reads as empty, and the block it controls just stops being emitted with
+ * no error anywhere. toneBias is exactly that case — it was extracted from
+ * image-prompts.ts in Phase 2, after Phase 1 had already seeded the row.
+ *
+ * Keyed on the field being ABSENT, not empty. An empty string that is present
+ * means the user deliberately cleared it, and that must be respected.
+ */
+export async function backfillProfileDefaults(): Promise<void> {
+  const row = await prisma.profile.findUnique({ where: { id: "default" } });
+  if (!row) return;
+  const visual = (row.visualJson ?? {}) as Record<string, unknown>;
+  if ("toneBias" in visual) return;
+
+  const { seedProfile } = await import("./seed.js");
+  await prisma.profile.update({
+    where: { id: "default" },
+    data: { visualJson: { ...visual, toneBias: seedProfile().visual.toneBias } },
+  });
+  console.log("[profile] backfilled visual.toneBias from the built-in default");
+}
+
 /** Reload the row into the cache. Leaves the last good value on failure. */
 export async function refreshProfile(): Promise<void> {
   try {
@@ -112,6 +138,7 @@ export function startProfile(): void {
   void (async () => {
     try {
       await ensureProfileSeeded();
+      await backfillProfileDefaults();
     } catch (e) {
       console.error("[profile] seed failed:", (e as Error).message);
     }

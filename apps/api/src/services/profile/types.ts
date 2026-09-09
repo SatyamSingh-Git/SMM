@@ -71,6 +71,12 @@ export const VisualSchema = z.object({
    * only the descriptor itself lives here.
    */
   subjectDescriptor: z.string().max(8_000).default(""),
+  /**
+   * Appended to every image prompt when "default personality" is on. Names the
+   * subject's proportions and markings, so it is persona config rather than
+   * mechanism — an empty string simply omits the block.
+   */
+  toneBias: z.string().max(8_000).default(""),
 });
 export type Visual = z.infer<typeof VisualSchema>;
 

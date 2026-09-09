@@ -90,6 +90,40 @@ export const api = {
       `/accounts/${accountId}/refresh-token`,
       { method: "POST" }
     ),
+  getStyleOptions: () =>
+    request<import("./types").StyleOptionsView>("/style-options"),
+  createStyleOption: (body: {
+    dimension: string;
+    key: string;
+    label: string;
+    promptText: string;
+  }) =>
+    request<import("./types").StyleOptionRow>("/style-options", {
+      method: "POST",
+      json: body,
+    }),
+  updateStyleOption: (
+    id: string,
+    patch: Partial<{
+      label: string;
+      promptText: string;
+      enabled: boolean;
+      sortOrder: number;
+    }>
+  ) =>
+    request<import("./types").StyleOptionRow>(`/style-options/${id}`, {
+      method: "PATCH",
+      json: patch,
+    }),
+  disableStyleOption: (id: string) =>
+    request<import("./types").StyleOptionRow>(`/style-options/${id}`, {
+      method: "DELETE",
+    }),
+  restoreStyleDefaults: (dimension: string) =>
+    request<{ restored: number; dimension: string }>(
+      `/style-options/${dimension}/restore-defaults`,
+      { method: "POST" }
+    ),
   getProfile: () => request<import("./types").ProfileView>("/profile"),
   updateProfile: (patch: import("./types").ProfilePatch) =>
     request<import("./types").ProfileView>("/profile", {
