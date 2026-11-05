@@ -195,7 +195,7 @@ Renders an IG/Threads-ish card: avatar + username + "platform · type", location
 - **Voice modifiers** (multi-select): cute, playful, flirty, bold, controversial(spicy), mysterious, soft, edgy, viral-bait. Default cute+playful.
 - **Intent** free-text box ("mention monsoon, my new lipstick…").
 
-The brand voice is a long persona system prompt for `@cute_aisha_vibes` (Gen-Z Indian female creator, audience young Indian men). It includes dozens of real style examples, strict emoji rules (4–6 per caption, lean on a heavy-rotation set, distribute don't stack), per-platform rules (IG ≤2200 + 8–15 hashtags; Threads ≤500 + no hashtags), and demands STRICT JSON output. Output is parsed (with fence-stripping fallback) and capped to the platform char limit.
+The brand voice is a long persona system prompt for the creator (Gen-Z Indian female creator, audience young Indian men). It includes dozens of real style examples, strict emoji rules (4–6 per caption, lean on a heavy-rotation set, distribute don't stack), per-platform rules (IG ≤2200 + 8–15 hashtags; Threads ≤500 + no hashtags), and demands STRICT JSON output. Output is parsed (with fence-stripping fallback) and capped to the platform char limit.
 
 DeepSeek call params: temperature 0.95, max_tokens 1500, JSON mode. Vision call: temperature 0.2, max_tokens 400.
 

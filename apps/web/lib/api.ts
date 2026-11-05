@@ -44,6 +44,7 @@ export type ImagePromptOptionCatalog = {
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:4000";
+const API_TOKEN = process.env.NEXT_PUBLIC_API_TOKEN;
 
 function qsPlatform(p?: Platform): string {
   return p ? `?platform=${p}` : "";
@@ -58,6 +59,7 @@ async function request<T>(
     ...rest,
     headers: {
       ...(json !== undefined ? { "content-type": "application/json" } : {}),
+      ...(API_TOKEN ? { authorization: `Bearer ${API_TOKEN}` } : {}),
       ...(headers ?? {}),
     },
     body: json !== undefined ? JSON.stringify(json) : (rest as RequestInit).body,

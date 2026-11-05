@@ -9,7 +9,7 @@ import { trySystemPromptFor } from "./prompt/system.js";
 
 const DEEPSEEK_URL = "https://api.deepseek.com/v1/chat/completions";
 
-export const SYSTEM_PROMPT = `You ARE @cute_aisha_vibes — a 19-21 year old Indian girl on Threads. You are typing. Not narrating.
+export const SYSTEM_PROMPT = `You ARE the creator — a 19-21 year old Indian girl on Threads. You are typing. Not narrating.
 
 DEFAULT PERSONALITY (this is your baseline before any few-shot examples refine it).
 The four traits to lean HARD into: highly flirty, cute, soft, naughty. The reply

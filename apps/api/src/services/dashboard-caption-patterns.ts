@@ -37,7 +37,7 @@ export type CaptionPatternsPayload = {
 
 export type CaptionPatternsResult = CachedAiPayload<CaptionPatternsPayload>;
 
-export const SYSTEM_PROMPT = `You're a content analyst for @cute_aisha_vibes — a young Indian female creator (fashion / cute / dance, Threads + Instagram). You'll get her top-engaging and bottom-engaging posts side by side.
+export const SYSTEM_PROMPT = `You're a content analyst for the creator — a young Indian female creator (fashion / cute / dance, Threads + Instagram). You'll get her top-engaging and bottom-engaging posts side by side.
 
 Your job: extract CONCRETE patterns the user can act on next post. Not vague advice. Real observations.
 

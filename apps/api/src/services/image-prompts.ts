@@ -135,7 +135,7 @@ export async function generateCarouselCompanion(
     .map((p, i) => `Slide ${i + 1}: ${p}`)
     .join("\n\n");
 
-  const userText = `Below are ${slides.length} image-generation prompts — each describes ONE slide of the SAME photo carousel for @cute_aisha_vibes. Write the post text for this carousel.
+  const userText = `Below are ${slides.length} image-generation prompts — each describes ONE slide of the SAME photo carousel for the creator. Write the post text for this carousel.
 
 ${slideBlock}
 

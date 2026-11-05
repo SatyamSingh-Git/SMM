@@ -1,8 +1,16 @@
-# SMM — Instagram + Threads management
+# SMM
 
-A self-hosted scheduler + autonomous engagement system for **one creator's** Instagram and Threads accounts (`@cute_aisha_vibes`). Built only on Meta's official APIs (Instagram Graph API + Threads API) — never scrapers — so the account stays safe.
+> A self-hosted Instagram and Threads scheduler with analytics and guarded
+> autonomous engagement.
 
-This README is the map. The deep docs live in [`docs/`](./docs):
+SMM is a TypeScript monorepo built around Meta's official APIs. It provides a
+calendar, composer, publishing workers, analytics, media handling, and an
+optional Threads reply system with rate limits, quiet hours, and a kill switch.
+It does **not** use scrapers, browser automation, or unofficial clients.
+
+## Documentation
+
+The README is the quick start. Detailed guides live in [`docs/`](./docs):
 
 - **[docs/SCHEDULING.md](./docs/SCHEDULING.md)** — the content calendar, the composer, media upload, AI caption assist, and how a post goes from draft → published.
 - **[docs/DASHBOARD.md](./docs/DASHBOARD.md)** — every analytics card, where its numbers come from, and the insights AI layer.
@@ -14,9 +22,19 @@ This README is the map. The deep docs live in [`docs/`](./docs):
 - **[docs/BACKUPS.md](./docs/BACKUPS.md)** — encrypted `pg_dump` to R2: scheduling, retention, and how to restore without any SMM code running.
 - **[PLAN.md](./PLAN.md)** — the roadmap to a fully autonomous, fully configurable product. Phase status lives there.
 
+## Highlights
+
+- Schedule Instagram feed, reel, carousel, story, and Threads content.
+- Publish reliably through Postgres-backed workers without Redis or BullMQ.
+- Manage media, profiles, captions, prompts, locations, and style options.
+- Track dashboard analytics and generate optional AI-assisted insights.
+- Run guarded Threads engagement with daily caps, quiet windows, previews,
+  retries, and a global kill switch.
+- Encrypt stored access tokens with AES-256-GCM.
+
 ---
 
-## What it does (the three stages)
+## Feature status
 
 | Stage | What | Status |
 |---|---|---|
@@ -24,7 +42,8 @@ This README is the map. The deep docs live in [`docs/`](./docs):
 | **2 — Engagement** | Autonomously reply to comments on your Threads posts in your own voice, on a human-like schedule, with hard safety rules + a kill switch. | ✅ **Live** |
 | **3 — Generation** | Generate the content itself end-to-end. | ⬜ Not started |
 
-There is also a **Stage 1.5 analytics layer** (insights sync + the dashboard) that sits on top of Stage 1.
+There is also a **Stage 1.5 analytics layer** (insights sync + dashboard) on top
+of Stage 1.
 
 ---
 
@@ -98,7 +117,7 @@ fly.toml                Fly.io deploy config (256MB, release_command runs migrat
 
 ---
 
-## Getting started
+## Quick start
 
 ### Prerequisites
 - Node ≥ 20, pnpm 9+ (`corepack enable && corepack prepare pnpm@9.15.0 --activate`)
@@ -106,7 +125,15 @@ fly.toml                Fly.io deploy config (256MB, release_command runs migrat
 - `cloudflared` on PATH (for the dev launcher — gives Meta a public HTTPS URL to fetch media)
 - A Meta developer app with your IG + Threads accounts added as testers (no App Review needed for your own accounts). See the *Meta setup* section below.
 
-### 1. Configure `.env` (repo root)
+### 1. Install dependencies
+
+```bash
+corepack enable
+corepack prepare pnpm@9.15.0 --activate
+pnpm install
+```
+
+### 2. Configure `.env` (repo root)
 All variables are validated in [apps/api/src/env.ts](apps/api/src/env.ts). The essentials:
 
 ```
@@ -114,6 +141,8 @@ DATABASE_URL=postgres://…           # Supabase pooled connection
 DIRECT_URL=postgres://…             # Supabase direct connection (migrations)
 TOKEN_ENCRYPTION_KEY=…              # 32 bytes base64: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 PUBLIC_BASE_URL=http://localhost:4000   # auto-rewritten to the tunnel URL by the dev launcher
+API_AUTH_TOKEN=…                    # required for protected API routes
+CORS_ORIGINS=http://localhost:3000  # comma-separated trusted dashboard origins
 
 THREADS_ACCESS_TOKEN=…              # long-lived Threads token (account auto-seeded on boot)
 INSTAGRAM_ACCESS_TOKEN=…            # long-lived IG token
@@ -126,16 +155,21 @@ META_WEBHOOK_VERIFY_TOKEN=…         # only needed if you wire up webhooks
 KILL_SWITCH=false                   # set true to halt ALL publishing + replying
 ENGAGEMENT_ENABLED=true             # set false to disable the auto-reply runner in prod
 ```
-`REDIS_URL` is accepted but ignored (legacy). Full list + defaults: [env.ts](apps/api/src/env.ts).
+For a separately hosted dashboard, set `NEXT_PUBLIC_API_TOKEN` to the same value
+as `API_AUTH_TOKEN`. Keep `.env` out of version control. Test publishing routes
+are disabled in production. `/health` and the Meta webhook handshake remain
+unauthenticated; all other API routes require a Bearer token.
 
-### 2. Install + migrate
+`REDIS_URL` is accepted but ignored as a legacy variable. The complete schema
+and defaults are documented in [env.ts](apps/api/src/env.ts).
+
+### 3. Generate the database client and migrate
 ```bash
-pnpm install
 pnpm db:generate     # generate the Prisma client
 pnpm db:migrate      # apply migrations to your DATABASE_URL
 ```
 
-### 3. Run (local dev)
+### 4. Run locally
 The one-shot launcher (Windows / PowerShell) starts a Cloudflare Tunnel, writes its URL into `PUBLIC_BASE_URL`, and opens three windows (API :4000, publish worker, web :3000):
 ```bash
 pnpm dev
@@ -151,7 +185,7 @@ pnpm --filter @smm/api engagement-worker   # auto-reply runner (NOT started by `
 
 Open `http://localhost:3000` for the UI and `http://localhost:4000/health` to sanity-check the API.
 
-### 4. Deploy (Fly.io)
+### 5. Deploy (Fly.io)
 ```bash
 pnpm secrets:push     # push .env values to Fly secrets (skips dev-only vars)
 fly deploy            # builds the image, runs migrations (release_command), swaps the machine
@@ -172,9 +206,26 @@ Meta's published limits the system respects (with a ~20% safety margin, enforced
 
 ---
 
-## Safety
+## Security and operations
 
-- **Kill switch:** `KILL_SWITCH=true` halts all outbound publishing and replying immediately (checked by both runners and the `/test/*` routes).
+- **Kill switch:** `KILL_SWITCH=true` halts outbound publishing and replying immediately.
+- **API authentication:** production requires `API_AUTH_TOKEN`; CORS is restricted
+  by `CORS_ORIGINS`.
 - **Only official APIs.** No Selenium / instagrapi / scrapers — those get accounts banned.
 - **Encrypted tokens.** Access tokens are AES-256-GCM encrypted at rest ([crypto.ts](apps/api/src/crypto.ts)).
 - **Engagement guardrails.** Hard content rules, daily caps, IST quiet windows, and a confidence-based skip path — all detailed in [docs/AGENTS.md](./docs/AGENTS.md).
+
+Before making a fork or deployment public:
+
+1. Confirm no `.env` files, database dumps, uploads, tokens, or private keys are
+   tracked.
+2. Set production secrets through the hosting provider, not in this repository.
+3. Generate a unique `API_AUTH_TOKEN` and `TOKEN_ENCRYPTION_KEY`.
+4. Restrict `CORS_ORIGINS` to the actual dashboard origin.
+5. Review [GitHub's sensitive-data guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)
+   if any secret was ever committed.
+
+## License
+
+No license has been declared yet. Add a `LICENSE` file before accepting external
+contributions or redistributing the project.

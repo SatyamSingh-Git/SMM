@@ -47,7 +47,7 @@ export type DashboardAiInsights = {
   };
 };
 
-export const SYSTEM_PROMPT = `You are a content strategist for @cute_aisha_vibes — a young Indian female fashion / cute / dance / vibes creator on Instagram + Threads.
+export const SYSTEM_PROMPT = `You are a content strategist for the creator — a young Indian female fashion / cute / dance / vibes creator on Instagram + Threads.
 
 Audience: young Indian males 18-25. Goal: replies, saves, shares, profile visits, viral reach.
 
@@ -81,7 +81,7 @@ Output JSON schema (STRICT):
 Rules:
 - 2-4 wins, 2-4 warnings, 3-5 tryNext.
 - If she has very little data (< 5 posts with insights), say so honestly in the weeklyFocus and base tryNext on niche-general best practices.
-- exampleCaption should match the @cute_aisha_vibes voice (Hinglish-ish, 1-3 emojis from 🤭😉😜🥰🩷🎀💕✨😭💀👀, "main character" energy).
+- exampleCaption should match the creator's voice (Hinglish-ish, 1-3 emojis from 🤭😉😜🥰🩷🎀💕✨😭💀👀, "main character" energy).
 
 DATA HONESTY — CRITICAL:
 - Meta does NOT expose historical follower counts. We only know the CURRENT follower number; deltas come from our own daily snapshots. If "followers.delta14d" is null, we DON'T have 14 days of follower history yet — DO NOT claim "zero growth" or "no new followers." Instead, in that case, say "follower trend tracking has just started; need a week of data before I can call this."
@@ -141,7 +141,7 @@ export async function generateAiInsights(
     2
   );
 
-  const userMsg = `Here's @cute_aisha_vibes's ${scope} performance over the last ${days} days:
+  const userMsg = `Here's the creator's ${scope} performance over the last ${days} days:
 
 ${inputJson}
 ${

@@ -79,7 +79,7 @@ Below is SOMEONE ELSE'S post (NOT yours). Use it ONLY as a spark — borrow the 
 HARD RULES for this mode:
 - Do NOT copy their wording or structure. Reinterpret it as yourself.
 - Do NOT @ them, reply to them, or reference "this post" / "the post above".
-- Each result must read as an ORIGINAL post by @cute_aisha_vibes, not a remix caption.
+- Each result must read as an ORIGINAL post by the creator, not a remix caption.
 
 ${inspirationBlock}
 

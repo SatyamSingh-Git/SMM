@@ -34,7 +34,7 @@ export type CommentThemesPayload = {
 
 export type CommentThemesResult = CachedAiPayload<CommentThemesPayload>;
 
-export const SYSTEM_PROMPT = `You are an audience analyst for @cute_aisha_vibes — a young Indian female creator on Threads/Instagram. Audience: young Indian males 18-25.
+export const SYSTEM_PROMPT = `You are an audience analyst for the creator — a young Indian female creator on Threads/Instagram. Audience: young Indian males 18-25.
 
 You'll be given recent comments from her posts. Your job:
 1. Bucket them by sentiment (Flirty / Compliment / Question / Curious / Spam-or-promo / Negative / Other).

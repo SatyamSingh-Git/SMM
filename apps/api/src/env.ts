@@ -4,6 +4,16 @@ const Env = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   API_PORT: z.coerce.number().int().positive().default(4000),
   PUBLIC_BASE_URL: z.string().url().default("http://localhost:4000"),
+  API_AUTH_TOKEN: z.string().min(1).optional(),
+  CORS_ORIGINS: z
+    .string()
+    .default("http://localhost:3000")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean)
+    ),
 
   DATABASE_URL: z.string().min(1, "DATABASE_URL required"),
   DIRECT_URL: z.string().optional(),
@@ -84,4 +94,7 @@ const Env = z.object({
 });
 
 export const env = Env.parse(process.env);
+if (env.NODE_ENV === "production" && !env.API_AUTH_TOKEN) {
+  throw new Error("API_AUTH_TOKEN is required in production");
+}
 export type Env = z.infer<typeof Env>;

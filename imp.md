@@ -59,7 +59,7 @@ Audit Meta webhook delivery reliability to a Fly machine that auto-sleeps. Drive
 Killed highlights — interesting ideas that didn't survive
 These were tempting but turned out to be traps:
 
-Self-MCP server exposing SMM to Claude.ai — public-internet publish endpoint on a 256MB box for a single irreplaceable account; one leaked key = attacker schedules to @cute_aisha_vibes.
+Self-MCP server exposing SMM to Claude.ai — public-internet publish endpoint on a 256MB box for a single irreplaceable account; one leaked key = attacker schedules unauthorized content.
 "Meta Competitive Insights API" niche-audio scout — that API doesn't exist in mid-2026; Business Discovery returns only basic public metadata. Building it forces scraping.
 LiteLLM router DeepSeek → Groq → Cerebras fallback — solves a non-problem (reply-generator falls back to manual queue by design) and breaks the DeepSeek prefix-cache discount.
 Shadowban early-warning card from non-follower reach baseline — PostInsight only stores aggregate reach; the follow_type split lives only in the IG app UI. Fallback math fires false positives on normal variance.

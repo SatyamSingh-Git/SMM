@@ -181,7 +181,7 @@ Be specific (e.g. "pastel pink kurti" not "pink top"). If unsure about something
 
 // ---------- Brand voice (DeepSeek prompt) ----------
 
-export const BRAND_VOICE = `You are writing captions AS a young Indian female creator named @cute_aisha_vibes. Not a brand. Not a marketer. A 20-year-old who is online a lot, posts at 11pm in her hostel room, half-bored half-flirty, and just... types whatever feels real.
+export const BRAND_VOICE = `You are writing captions AS a young Indian female creator. Not a brand. Not a marketer. A 20-year-old who is online a lot, posts at 11pm in her hostel room, half-bored half-flirty, and just... types whatever feels real.
 
 The whole point is to sound like a real kid posting, not a marketing intern. Be willing to be messy, lowercase, mid-thought, sometimes plain weird. Real engagement comes from "wait this is so me" reactions, not "wow nice caption".
 
@@ -357,7 +357,7 @@ export const BRAND_VOICE_VISUAL_FALLBACK = `22-year-old Indian woman from Mumbai
 // System prompt for the image-prompt writer. Kept stable (prompt-cache friendly).
 // Encodes: phrasing rule, style anchors, outfit / setting / pose vocabulary, the
 // 3-prompts-per-scene structural rule, and output format.
-export const IMAGE_PROMPT_SYSTEM = `You are a senior fashion / lifestyle photographer briefing an image generator. You write image-generation prompts for the Instagram + Threads creator @cute_aisha_vibes. Your output is plain photographer briefs — what is in frame — never an explanation, never a caption, never meta-talk.
+export const IMAGE_PROMPT_SYSTEM = `You are a senior fashion / lifestyle photographer briefing an image generator. You write image-generation prompts for the Instagram + Threads creator. Your output is plain photographer briefs — what is in frame — never an explanation, never a caption, never meta-talk.
 
 PHOTOREALISM ANCHORING — the most important rule. Image generators do not respond to abstract words like "realistic", "hyper-realistic", "photorealistic". They respond to SPECIFIC technical and physical detail that real photos contain. EVERY prompt you write must include concrete anchors from these categories — not bolted on at the end, but woven through the description:
 
@@ -600,7 +600,7 @@ export async function suggestTopicTag(opts: {
 }): Promise<string[]> {
   const seed = opts.caption.trim().slice(0, 600);
   if (!seed) return [];
-  const userText = `Suggest 5 Threads topic tags for this post by @cute_aisha_vibes (a young Indian fashion/lifestyle creator). A topic tag is a single short niche label (1-3 words) that routes the post to people who follow that topic — like "desi fashion", "soft girl era", "grwm", "mumbai diaries", "ootd".
+  const userText = `Suggest 5 Threads topic tags for this post by a young Indian fashion/lifestyle creator. A topic tag is a single short niche label (1-3 words) that routes the post to people who follow that topic — like "desi fashion", "soft girl era", "grwm", "mumbai diaries", "ootd".
 
 Rules: NO "#" symbol, NO periods, NO ampersands, each ≤30 chars, lowercase, specific to the post's actual content + her niche.
 
@@ -644,7 +644,7 @@ export async function rewriteFirstLine(opts: {
   const firstLine = (opts.caption.split("\n")[0] ?? opts.caption).trim();
   if (!firstLine) return [];
   const cutoff = opts.platform === "instagram" ? 125 : 80;
-  const userText = `Rewrite ONLY the opening line (the hook) of this ${opts.platform} post. Keep @cute_aisha_vibes's exact voice — lowercase ok, mid-thought ok, real-girl-typing, NOT marketing copy. The hook must land in the first ${cutoff} characters (that's all most people see before "more"). Do NOT add hashtags. Do NOT explain.
+  const userText = `Rewrite ONLY the opening line (the hook) of this ${opts.platform} post. Keep the creator's exact voice — lowercase ok, mid-thought ok, real-girl-typing, NOT marketing copy. The hook must land in the first ${cutoff} characters (that's all most people see before "more"). Do NOT add hashtags. Do NOT explain.
 
 Current opening line:
 """${firstLine.replace(/"""/g, '\\"\\"\\"')}"""

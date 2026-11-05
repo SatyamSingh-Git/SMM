@@ -19,7 +19,7 @@ import { DEFAULT_TONE_BIAS } from "../image-prompt-options.js";
 import { DEFAULT_CADENCE, type Profile } from "./types.js";
 
 /** The handle baked into the original constants, replaced by a placeholder. */
-const SEED_HANDLE = "cute_aisha_vibes";
+const SEED_HANDLE = "creator_handle";
 
 /** Replace every literal occurrence of the seed handle with {{handle}}. */
 export function templatize(text: string, handle: string = SEED_HANDLE): string {

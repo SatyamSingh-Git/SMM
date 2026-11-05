@@ -21,6 +21,7 @@ import { ensureAccountsFromEnv } from "./services/accounts.js";
 import { startRuntimeConfig } from "./services/runtime-config.js";
 import { startProfile } from "./services/profile/resolver.js";
 import { startStyleOptions } from "./services/style-options.js";
+import { requireApiAuth } from "./auth.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -29,11 +30,15 @@ export async function buildServer(): Promise<FastifyInstance> {
     },
   });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: env.CORS_ORIGINS,
+  });
 
   await registerHealthRoutes(app);
   await registerWebhookRoutes(app);
-  await registerTestRoutes(app);
+  if (env.NODE_ENV !== "production") {
+    await registerTestRoutes(app);
+  }
   await registerMediaRoutes(app);
   await registerAccountRoutes(app);
   await registerPostRoutes(app);
@@ -47,6 +52,12 @@ export async function buildServer(): Promise<FastifyInstance> {
   await registerAdminRoutes(app);
   await registerProfileRoutes(app);
   await registerStyleOptionRoutes(app);
+
+  app.addHook("onRequest", async (request, reply) => {
+    const path = request.url.split("?", 1)[0] ?? "";
+    if (path === "/health" || path.startsWith("/webhooks/meta")) return;
+    await requireApiAuth(request, reply);
+  });
 
   // Prime the runtime-config cache (idempotent; also self-primes on import).
   startRuntimeConfig();
